@@ -21,6 +21,12 @@ export async function POST(req: Request) {
     2. Ask ONLY ONE question at a time. Never overwhelm the candidate with multiple questions in a single message.
     3. Wait for the candidate's answer before moving to the next requirement.`;
 
+    // 0. Fail fast and loud if the key is missing, instead of letting fetch throw a vague error later
+    if (!process.env.GROQ_API_KEY) {
+      console.error("🔥 GROQ_API_KEY is missing from your environment (.env.local)");
+      throw new Error("Missing GROQ_API_KEY");
+    }
+
     // 1. Format the messages exactly how the Groq API expects them
     const apiMessages = [
       { role: "system", content: systemPrompt },
@@ -35,10 +41,13 @@ export async function POST(req: Request) {
         "Content-Type": "application/json"
       },
       body: JSON.stringify({
-        model: "llama3-8b-8192", // Lightning fast Llama 3
+        // llama3-8b-8192 was decommissioned by Groq (May 2025), and its recommended
+        // replacement llama-3.1-8b-instant was itself deprecated June 17, 2026.
+        // openai/gpt-oss-20b is the current recommendation: fast, cheap, and active.
+        model: "openai/gpt-oss-20b",
         messages: apiMessages,
         temperature: 0.7,
-        max_tokens: 250
+        max_completion_tokens: 250
       })
     });
 
@@ -46,7 +55,7 @@ export async function POST(req: Request) {
     if (!response.ok) {
       const errorText = await response.text();
       console.error("🔥 GROQ HTTP ERROR:", errorText);
-      throw new Error(`Groq API returned status ${response.status}`);
+      throw new Error(`Groq API returned status ${response.status}: ${errorText}`);
     }
 
     // 4. Parse the response and send it to your frontend
@@ -62,4 +71,4 @@ export async function POST(req: Request) {
       { status: 500 }
     );
   }
-}       
+}
