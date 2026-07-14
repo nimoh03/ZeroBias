@@ -1,8 +1,57 @@
+import { createClient } from "@/utils/supabase/server";
+
 export const maxDuration = 30;
 
 export async function POST(req: Request) {
   try {
-    const { messages, jobContext } = await req.json();
+    const { messages, jobContext, candidateId: incomingCandidateId } = await req.json();
+    const supabase = await createClient();
+
+    // 1. Make sure a candidate record exists for this conversation.
+    // First turn from a given visitor: no candidateId yet, so create one
+    // and backfill the transcript with everything that happened before
+    // this request (the hardcoded greeting + the candidate's first reply).
+    // Every turn after that: just append the newest message.
+    let candidateId = incomingCandidateId as string | null;
+
+    if (!candidateId) {
+      const { data: candidate, error: candidateError } = await supabase
+        .from("candidates")
+        .insert({ job_id: jobContext.id, status: "screening" })
+        .select("id")
+        .single();
+
+      if (candidateError || !candidate) {
+        console.error("🔥 COULD NOT CREATE CANDIDATE:", candidateError?.message);
+        throw new Error("Failed to start a candidate record.");
+      }
+
+      candidateId = candidate.id;
+
+      // Backfill full history so far (greeting + first candidate message).
+      const backfillRows = messages.map((m: { role: string; content: string }) => ({
+        candidate_id: candidateId,
+        role: m.role,
+        content: m.content,
+      }));
+
+      const { error: backfillError } = await supabase.from("transcripts").insert(backfillRows);
+      if (backfillError) {
+        console.error("🔥 COULD NOT BACKFILL TRANSCRIPT:", backfillError.message);
+      }
+    } else {
+      // Every later turn: only the newest message needs saving —
+      // everything before it is already in the transcripts table.
+      const latestMessage = messages[messages.length - 1];
+      const { error: appendError } = await supabase.from("transcripts").insert({
+        candidate_id: candidateId,
+        role: latestMessage.role,
+        content: latestMessage.content,
+      });
+      if (appendError) {
+        console.error("🔥 COULD NOT APPEND MESSAGE:", appendError.message);
+      }
+    }
 
     const systemPrompt = `You are Nova, an expert AI recruiter. You are interviewing a candidate for the role of ${jobContext.title} in ${jobContext.location}.
 
@@ -58,11 +107,22 @@ export async function POST(req: Request) {
       throw new Error(`Groq API returned status ${response.status}: ${errorText}`);
     }
 
-    // 4. Parse the response and send it to your frontend
+    // 4. Parse the response
     const data = await response.json();
     const aiResponseText = data.choices[0].message.content;
 
-    return Response.json({ text: aiResponseText });
+    // 5. Save the assistant's reply too, so the transcript is complete
+    // even if the candidate never sends another message.
+    const { error: assistantSaveError } = await supabase.from("transcripts").insert({
+      candidate_id: candidateId,
+      role: "assistant",
+      content: aiResponseText,
+    });
+    if (assistantSaveError) {
+      console.error("🔥 COULD NOT SAVE ASSISTANT REPLY:", assistantSaveError.message);
+    }
+
+    return Response.json({ text: aiResponseText, candidateId });
 
   } catch (error: any) {
     console.error("🔥 ROUTE CRASHED:", error.message || error);

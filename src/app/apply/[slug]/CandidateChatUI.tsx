@@ -1,19 +1,52 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Send, Sparkles, User, Loader2 } from "lucide-react";
+
+const STORAGE_KEY_PREFIX = "hireflow_chat_";
 
 export default function CandidateChatUI({ job }: { job: any }) {
   const [inputText, setInputText] = useState("");
   const [isLoading, setIsLoading] = useState(false);
-  
+  const [candidateId, setCandidateId] = useState<string | null>(null);
+  const [hydrated, setHydrated] = useState(false);
+
+  const storageKey = `${STORAGE_KEY_PREFIX}${job.public_slug}`;
+  const greeting = {
+    role: 'assistant',
+    content: `Hi there! 👋 I'm Nova, the AI recruiter for ${job.profiles?.company_name || 'this team'}. We are looking for a **${job.title}** based in ${job.location}.\n\nBefore we begin the actual interview, could you tell me your first and last name?`
+  };
+
   // Standard React State for messages
-  const [messages, setMessages] = useState([
-    {
-      role: 'assistant',
-      content: `Hi there! 👋 I'm Nova, the AI recruiter for ${job.profiles?.company_name || 'this team'}. We are looking for a **${job.title}** based in ${job.location}.\n\nBefore we begin the actual interview, could you tell me your first and last name?`
+  const [messages, setMessages] = useState([greeting]);
+
+  // On mount, resume a previous in-progress conversation for this job
+  // (same browser) instead of losing it on refresh.
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem(storageKey);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (parsed.messages?.length) setMessages(parsed.messages);
+        if (parsed.candidateId) setCandidateId(parsed.candidateId);
+      }
+    } catch (error) {
+      console.error("Could not restore saved conversation:", error);
+    } finally {
+      setHydrated(true);
     }
-  ]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Persist to localStorage any time the conversation changes, once hydrated.
+  useEffect(() => {
+    if (!hydrated) return;
+    try {
+      localStorage.setItem(storageKey, JSON.stringify({ messages, candidateId }));
+    } catch (error) {
+      console.error("Could not save conversation:", error);
+    }
+  }, [messages, candidateId, hydrated, storageKey]);
 
   const handleSend = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -33,7 +66,8 @@ export default function CandidateChatUI({ job }: { job: any }) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
           messages: newMessages,
-          jobContext: job 
+          jobContext: job,
+          candidateId,
         }),
       });
 
@@ -41,7 +75,11 @@ export default function CandidateChatUI({ job }: { job: any }) {
       
       const data = await response.json();
 
-      // 3. Add AI response to UI
+      // 3. Add AI response to UI, and remember the candidate record
+      // the server created/used so the next turn only sends the delta.
+      if (data.candidateId && data.candidateId !== candidateId) {
+        setCandidateId(data.candidateId);
+      }
       setMessages(prev => [...prev, { role: 'assistant', content: data.text }]);
     } catch (error) {
       console.error(error);
