@@ -1,0 +1,66 @@
+@import "tailwindcss";
+
+@theme {
+  /* Map Tailwind's sans font to our optimized Next.js Inter variable */
+  --font-sans: var(--font-inter), system-ui, sans-serif;
+
+  /* Brand Colors */
+  --color-surface: #f9f9ff;
+  --color-on-surface: #141b2b;
+  --color-on-surface-variant: #434655;
+  --color-surface-container-lowest: #ffffff;
+  --color-surface-container-low: #f1f3ff;
+  --color-surface-container: #e9edff;
+  --color-surface-container-high: #e1e8fd;
+  --color-surface-container-highest: #dce2f7;
+
+  --color-primary: #004ac6;
+  --color-on-primary: #ffffff;
+  --color-primary-container: #2563eb;
+  --color-on-primary-container: #ffffff;
+
+  --color-secondary: #5c5f60;
+  --color-tertiary: #943700;
+
+  --color-error: #ba1a1a;
+  --color-error-container: #ffdad6;
+  --color-on-error-container: #93000a;
+
+  --color-outline: #737686;
+  --color-outline-variant: #c3c6d7;
+}
+
+@layer base {
+  body {
+    background-color: var(--color-surface);
+    color: var(--color-on-surface);
+
+    /* Force high-quality text rendering across all browsers */
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+
+    /* Enable advanced Inter font features (geometric alternates for a sharper look) */
+    font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+  }
+
+  /* Global Kerning: Tighten all headers for a punchy, modern SaaS look */
+  h1,
+  h2,
+  h3,
+  h4,
+  h5,
+  h6 {
+    letter-spacing: -0.03em;
+  }
+
+  /* Slight tightening on body text to improve readability */
+  p,
+  span,
+  a,
+  button,
+  label,
+  input {
+    letter-spacing: -0.01em;
+  }
+}
