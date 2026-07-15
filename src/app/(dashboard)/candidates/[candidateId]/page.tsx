@@ -15,7 +15,7 @@ const statusLabel: Record<string, string> = {
   needs_review: 'Needs Human Review',
 };
 
-export default async function CandidateDetail({ params }: { params: { candidateId: string } }) {
+export default async function CandidateDetail({ params }: { params: Promise<{ candidateId: string }> }) {
   const { candidateId } = await params;
   const supabase = await createClient();
 
