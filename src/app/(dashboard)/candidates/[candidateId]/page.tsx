@@ -70,6 +70,7 @@ export default async function CandidateDetail({ params }: { params: { candidateI
             </div>
             <h2 className="text-xl font-bold text-on-surface">{candidate.name || 'Anonymous candidate'}</h2>
             <p className="text-sm text-on-surface-variant mt-1">Applied for {candidate.jobs?.title || 'this role'}</p>
+            {candidate.email && <p className="text-xs text-on-surface-variant mt-0.5">{candidate.email}</p>}
             {candidate.cv_url ? (
               <a
                 href={candidate.cv_url}

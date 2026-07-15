@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
-import { Send, Sparkles, User, Loader2, Paperclip, CheckCircle2, Clock } from "lucide-react";
+import { Send, User, Loader2, Plus, CheckCircle2, Clock, FileText } from "lucide-react";
 
 const STORAGE_KEY_PREFIX = "hireflow_chat_";
 
@@ -15,18 +15,17 @@ export default function CandidateChatUI({ job }: { job: any }) {
   const [cvFileName, setCvFileName] = useState<string | null>(null);
   const [isUploading, setIsUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
 
   const storageKey = `${STORAGE_KEY_PREFIX}${job.public_slug}`;
+  const companyName = job.profiles?.company_name || "the hiring team";
   const greeting = {
     role: 'assistant',
-    content: `Hi there! 👋 I'm Nova, the AI recruiter for ${job.profiles?.company_name || 'this team'}. We are looking for a **${job.title}** based in ${job.location}.\n\nBefore we begin the actual interview, could you tell me your first and last name?`
+    content: `Hi, I'm Nova with ${companyName}. We're hiring for a ${job.title} based in ${job.location}. To get started, could I get your full name and email address?`
   };
 
-  // Standard React State for messages
   const [messages, setMessages] = useState([greeting]);
 
-  // On mount, resume a previous in-progress conversation for this job
-  // (same browser) instead of losing it on refresh.
   useEffect(() => {
     try {
       const saved = localStorage.getItem(storageKey);
@@ -46,7 +45,6 @@ export default function CandidateChatUI({ job }: { job: any }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Persist to localStorage any time the conversation changes, once hydrated.
   useEffect(() => {
     if (!hydrated) return;
     try {
@@ -56,23 +54,25 @@ export default function CandidateChatUI({ job }: { job: any }) {
     }
   }, [messages, candidateId, isDone, finalStatus, cvFileName, hydrated, storageKey]);
 
+  useEffect(() => {
+    scrollRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
+  }, [messages, isLoading]);
+
   const handleSend = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!inputText.trim() || isLoading || isDone) return;
 
-    // 1. Add user message to UI immediately
     const userMessage = { role: 'user', content: inputText };
     const newMessages = [...messages, userMessage];
     setMessages(newMessages);
     setInputText("");
-    setIsLoading(true); // Trigger the WhatsApp-style spinner
+    setIsLoading(true);
 
     try {
-      // 2. Send standard fetch request to our API
       const response = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
+        body: JSON.stringify({
           messages: newMessages,
           jobContext: job,
           candidateId,
@@ -80,11 +80,9 @@ export default function CandidateChatUI({ job }: { job: any }) {
       });
 
       if (!response.ok) throw new Error("Failed to fetch");
-      
+
       const data = await response.json();
 
-      // 3. Add AI response to UI, and remember the candidate record
-      // the server created/used so the next turn only sends the delta.
       if (data.candidateId && data.candidateId !== candidateId) {
         setCandidateId(data.candidateId);
       }
@@ -95,15 +93,15 @@ export default function CandidateChatUI({ job }: { job: any }) {
       }
     } catch (error) {
       console.error(error);
-      setMessages(prev => [...prev, { role: 'assistant', content: "I'm having a little trouble connecting right now. Could you repeat that?" }]);
+      setMessages(prev => [...prev, { role: 'assistant', content: "Having trouble connecting right now — could you try sending that again?" }]);
     } finally {
-      setIsLoading(false); // Stop the spinner
+      setIsLoading(false);
     }
   };
 
   const handleCvSelected = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    e.target.value = ""; // allow re-selecting the same file later if needed
+    e.target.value = "";
     if (!file || !candidateId || isUploading) return;
 
     setIsUploading(true);
@@ -111,20 +109,21 @@ export default function CandidateChatUI({ job }: { job: any }) {
       const formData = new FormData();
       formData.append("file", file);
       formData.append("candidateId", candidateId);
+      if (job.recruiter_id) formData.append("recruiterId", job.recruiter_id);
 
       const response = await fetch('/api/upload-cv', { method: 'POST', body: formData });
       const data = await response.json();
 
       if (!response.ok) {
-        setMessages(prev => [...prev, { role: 'assistant', content: `⚠️ ${data.error || "Couldn't upload that file. Please try a PDF or Word doc under 5MB."}` }]);
+        setMessages(prev => [...prev, { role: 'assistant', content: data.error || "Couldn't upload that file — try a PDF or Word doc under 5MB." }]);
         return;
       }
 
       setCvFileName(data.filename);
-      setMessages(prev => [...prev, { role: 'user', content: `📎 Uploaded resume: ${data.filename}` }]);
+      setMessages(prev => [...prev, { role: 'user', content: `Attached: ${data.filename}` }]);
     } catch (error) {
       console.error(error);
-      setMessages(prev => [...prev, { role: 'assistant', content: "⚠️ Something went wrong uploading your CV. Please try again." }]);
+      setMessages(prev => [...prev, { role: 'assistant', content: "Something went wrong uploading that file. Please try again." }]);
     } finally {
       setIsUploading(false);
     }
@@ -133,71 +132,56 @@ export default function CandidateChatUI({ job }: { job: any }) {
   const finalActionIsLink = typeof job.final_action === 'string' && /^https?:\/\//i.test(job.final_action.trim());
 
   return (
-    <div className="flex flex-col h-screen max-w-3xl mx-auto bg-white border-x border-slate-100 shadow-2xl relative overflow-hidden">
-      
+    <div className="flex flex-col h-dvh max-w-3xl mx-auto bg-white border-x border-slate-100 shadow-2xl">
+
       {/* Header */}
-      <header className="h-20 shrink-0 px-6 flex items-center justify-between border-b border-slate-100 bg-white/80 backdrop-blur-md z-10">
-        <div className="flex items-center gap-4">
-          <div className="relative">
-            <div className="w-12 h-12 bg-gradient-to-br from-primary to-blue-700 rounded-full flex items-center justify-center text-white shadow-lg">
-              <Sparkles size={20} />
-            </div>
-            <div className="absolute bottom-0 right-0 w-3.5 h-3.5 bg-emerald-500 border-2 border-white rounded-full"></div>
-          </div>
-          <div>
-            <h1 className="text-lg font-extrabold text-slate-900 tracking-tight">Nova</h1>
-            <p className="text-xs font-bold text-slate-500 uppercase tracking-widest">AI Recruiter</p>
-          </div>
-        </div>
-        <div className="text-right hidden sm:block">
-          <p className="text-sm font-bold text-slate-900">{job.title}</p>
+      <header className="shrink-0 h-16 px-5 flex items-center justify-between border-b border-slate-100 bg-white z-10">
+        <div>
+          <h1 className="text-base font-bold text-slate-900 tracking-tight leading-tight">{job.title}</h1>
           <p className="text-xs font-medium text-slate-500">{job.location}</p>
+        </div>
+        <div className="text-right">
+          <p className="text-xs font-semibold text-slate-500">{companyName}</p>
         </div>
       </header>
 
       {/* Chat Transcript Area */}
-      <div className="flex-1 overflow-y-auto p-6 space-y-6 scroll-smooth pb-32">
+      <div className="flex-1 overflow-y-auto p-5 space-y-5">
         {messages.map((msg, index) => (
-          <div key={index} className={`flex gap-4 ${msg.role === 'user' ? 'flex-row-reverse' : ''} animate-in fade-in slide-in-from-bottom-2 duration-300`}>
-            
-            {/* Avatar */}
-            <div className={`w-10 h-10 shrink-0 rounded-full flex items-center justify-center shadow-sm ${msg.role === 'user' ? 'bg-slate-100 text-slate-500' : 'bg-primary text-white'}`}>
-              {msg.role === 'user' ? <User size={18} /> : <Sparkles size={18} />}
+          <div key={index} className={`flex gap-3 ${msg.role === 'user' ? 'flex-row-reverse' : ''}`}>
+            <div className={`w-8 h-8 shrink-0 rounded-full flex items-center justify-center text-xs font-bold ${msg.role === 'user' ? 'bg-slate-100 text-slate-500' : 'bg-primary text-white'}`}>
+              {msg.role === 'user' ? <User size={15} /> : 'N'}
             </div>
-
-            {/* Message Bubble */}
-            <div className={`max-w-[80%] px-5 py-4 rounded-3xl ${
-              msg.role === 'user' 
-                ? 'bg-slate-900 text-white rounded-tr-sm' 
+            <div className={`max-w-[80%] px-4 py-3 rounded-2xl ${
+              msg.role === 'user'
+                ? 'bg-slate-900 text-white rounded-tr-sm'
                 : 'bg-slate-50 border border-slate-200 text-slate-800 rounded-tl-sm'
             }`}>
               <p className="text-[15px] leading-relaxed whitespace-pre-wrap">{msg.content}</p>
             </div>
           </div>
         ))}
-        
-        {/* Real-time Typing Indicator (The Spinner) */}
+
         {isLoading && (
-          <div className="flex gap-4 animate-in fade-in">
-             <div className="w-10 h-10 shrink-0 rounded-full bg-primary flex items-center justify-center text-white shadow-sm">
-              <Sparkles size={18} />
-            </div>
-            <div className="px-5 py-4 rounded-3xl bg-slate-50 border border-slate-200 rounded-tl-sm flex items-center gap-2">
-               <Loader2 size={16} className="animate-spin text-slate-400" />
-               <span className="text-sm text-slate-500 font-medium">Nova is thinking...</span>
+          <div className="flex gap-3">
+            <div className="w-8 h-8 shrink-0 rounded-full bg-primary flex items-center justify-center text-white text-xs font-bold">N</div>
+            <div className="px-4 py-3 rounded-2xl bg-slate-50 border border-slate-200 rounded-tl-sm flex items-center gap-2">
+              <Loader2 size={15} className="animate-spin text-slate-400" />
+              <span className="text-sm text-slate-500">Typing...</span>
             </div>
           </div>
         )}
+        <div ref={scrollRef} />
       </div>
 
-      {/* Input Area */}
-      <div className="absolute bottom-0 left-0 w-full bg-gradient-to-t from-white via-white to-transparent pt-10 pb-6 px-6">
+      {/* Input Area — normal flex flow, not absolute, so mobile keyboards don't break it */}
+      <div className="shrink-0 bg-white border-t border-slate-100 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] px-4">
         {isDone ? (
-          <div className="max-w-2xl mx-auto text-center bg-slate-50 border border-slate-200 rounded-2xl py-5 px-6">
+          <div className="text-center bg-slate-50 border border-slate-200 rounded-2xl py-5 px-6">
             {finalStatus === 'qualified' ? (
               <>
-                <CheckCircle2 className="mx-auto text-emerald-500 mb-2" size={28} />
-                <p className="text-sm font-bold text-slate-900">You're through to the next stage 🎉</p>
+                <CheckCircle2 className="mx-auto text-emerald-500 mb-2" size={26} />
+                <p className="text-sm font-bold text-slate-900">You're through to the next stage</p>
                 {job.final_action ? (
                   finalActionIsLink ? (
                     <a
@@ -217,7 +201,7 @@ export default function CandidateChatUI({ job }: { job: any }) {
               </>
             ) : finalStatus === 'needs_review' ? (
               <>
-                <Clock className="mx-auto text-orange-500 mb-2" size={28} />
+                <Clock className="mx-auto text-orange-500 mb-2" size={26} />
                 <p className="text-sm font-bold text-slate-900">Thanks — we'll be in touch soon</p>
                 <p className="text-xs text-slate-500 mt-1">A member of the team is reviewing your answers.</p>
               </>
@@ -229,43 +213,47 @@ export default function CandidateChatUI({ job }: { job: any }) {
             )}
           </div>
         ) : (
-        <form onSubmit={handleSend} className="relative max-w-2xl mx-auto flex items-center">
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept=".pdf,.doc,.docx"
-            onChange={handleCvSelected}
-            className="hidden"
-          />
-          <button
-            type="button"
-            onClick={() => fileInputRef.current?.click()}
-            disabled={!candidateId || isUploading}
-            title={!candidateId ? "Send your first message before attaching a CV" : "Attach your CV"}
-            className="absolute left-2.5 w-10 h-10 flex items-center justify-center rounded-full text-slate-400 hover:text-primary hover:bg-slate-50 transition-colors disabled:opacity-40 disabled:hover:bg-transparent"
-          >
-            {isUploading ? <Loader2 size={18} className="animate-spin" /> : <Paperclip size={18} />}
-          </button>
-          <input 
-            type="text" 
-            value={inputText}
-            onChange={(e) => setInputText(e.target.value)}
-            disabled={isLoading}
-            placeholder={isLoading ? "Nova is thinking..." : cvFileName ? "Type your message..." : "Type your message... (📎 to attach your CV)"}
-            className="w-full bg-white border border-slate-300 rounded-full pl-14 pr-16 py-4 text-[15px] shadow-lg shadow-slate-200/50 focus:border-primary focus:ring-4 focus:ring-primary/10 outline-none transition-all disabled:opacity-50 disabled:bg-slate-50"
-          />
-          <button 
-            type="submit"
-            disabled={!inputText.trim() || isLoading}
-            className="absolute right-2.5 w-11 h-11 bg-primary text-white rounded-full flex items-center justify-center hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:bg-slate-300"
-          >
-            <Send size={18} className="ml-1" />
-          </button>
-        </form>
+          <>
+            <form onSubmit={handleSend} className="relative flex items-center">
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept=".pdf,.doc,.docx"
+                onChange={handleCvSelected}
+                className="hidden"
+              />
+              <button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                disabled={!candidateId || isUploading}
+                title={!candidateId ? "Send your first message before attaching a CV" : "Attach your CV"}
+                className="absolute left-1.5 w-9 h-9 flex items-center justify-center rounded-full text-slate-400 hover:text-primary hover:bg-slate-100 transition-colors disabled:opacity-40 disabled:hover:bg-transparent shrink-0"
+              >
+                {isUploading ? <Loader2 size={18} className="animate-spin" /> : <Plus size={20} />}
+              </button>
+              <input
+                type="text"
+                value={inputText}
+                onChange={(e) => setInputText(e.target.value)}
+                disabled={isLoading}
+                placeholder={isLoading ? "..." : "Type your message..."}
+                className="w-full bg-slate-100 border border-transparent rounded-full pl-12 pr-14 py-3.5 text-[16px] focus:bg-white focus:border-primary focus:ring-4 focus:ring-primary/10 outline-none transition-all disabled:opacity-50"
+              />
+              <button
+                type="submit"
+                disabled={!inputText.trim() || isLoading}
+                className="absolute right-1.5 w-9 h-9 bg-primary text-white rounded-full flex items-center justify-center hover:bg-blue-700 transition-colors disabled:opacity-40 disabled:bg-slate-300 shrink-0"
+              >
+                <Send size={16} className="ml-0.5" />
+              </button>
+            </form>
+            {cvFileName && (
+              <p className="text-center text-[11px] font-medium text-slate-400 mt-2 flex items-center justify-center gap-1">
+                <FileText size={11} /> {cvFileName} attached
+              </p>
+            )}
+          </>
         )}
-        <p className="text-center text-[11px] font-medium text-slate-400 mt-4">
-          Powered by HireFlow AI. Messages are analyzed by artificial intelligence.
-        </p>
       </div>
 
     </div>

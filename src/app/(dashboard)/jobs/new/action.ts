@@ -12,6 +12,7 @@ export async function createJobAction(data: {
   mustHaves: string;
   niceToHaves: string;
   finalAction: string;
+  requestCv: boolean;
 }) {
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
@@ -34,6 +35,7 @@ export async function createJobAction(data: {
     must_haves: data.mustHaves,
     nice_to_haves: data.niceToHaves,
     final_action: data.finalAction || null,
+    request_cv: !!data.requestCv,
     public_slug: public_slug,
     status: 'active'
   });

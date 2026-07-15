@@ -2,12 +2,12 @@
 
 import { useState, useTransition, KeyboardEvent } from "react";
 import Link from "next/link";
-import { ArrowLeft, Sparkles, Briefcase, Target, CheckCircle2, Loader2, X } from "lucide-react";
+import { ArrowLeft, Sparkles, Briefcase, Target, CheckCircle2, Loader2, X, FileText } from "lucide-react";
 import { createJobAction } from "./action";
 
 export default function NewJobPage() {
   const [isPending, startTransition] = useTransition();
-  
+
   // Basic Info State
   const [formData, setFormData] = useState({
     title: "",
@@ -17,12 +17,20 @@ export default function NewJobPage() {
     finalAction: "",
   });
 
+  const [requestCv, setRequestCv] = useState(false);
+
   // Premium List States (Arrays instead of strings)
   const [mustHaves, setMustHaves] = useState<string[]>([]);
   const [mustHaveInput, setMustHaveInput] = useState("");
   
   const [niceToHaves, setNiceToHaves] = useState<string[]>([]);
   const [niceToHaveInput, setNiceToHaveInput] = useState("");
+
+  // Autofill modal
+  const [showAutofill, setShowAutofill] = useState(false);
+  const [autofillText, setAutofillText] = useState("");
+  const [isAutofilling, setIsAutofilling] = useState(false);
+  const [autofillError, setAutofillError] = useState("");
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
     setFormData(prev => ({ ...prev, [e.target.name]: e.target.value }));
@@ -67,6 +75,7 @@ export default function NewJobPage() {
           ...formData,
           mustHaves: mustHaves.map(item => `- ${item}`).join('\n'),
           niceToHaves: niceToHaves.map(item => `- ${item}`).join('\n'),
+          requestCv,
         };
         await createJobAction(payload);
       } catch (error) {
@@ -76,7 +85,44 @@ export default function NewJobPage() {
   };
 
   const handleAutoFillClick = () => {
-    alert("AI Auto-fill will be wired up to Groq in the next phase! For now, please type manually.");
+    setAutofillError("");
+    setShowAutofill(true);
+  };
+
+  const runAutofill = async () => {
+    if (autofillText.trim().length < 20) {
+      setAutofillError("Paste a bit more of the job description first.");
+      return;
+    }
+    setIsAutofilling(true);
+    setAutofillError("");
+    try {
+      const response = await fetch('/api/autofill-job', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ rawText: autofillText }),
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        setAutofillError(data.error || "Couldn't parse that. Please try again or fill in manually.");
+        return;
+      }
+      setFormData(prev => ({
+        ...prev,
+        title: data.title || prev.title,
+        location: data.location || prev.location,
+        jobType: data.jobType || prev.jobType,
+        description: data.description || prev.description,
+      }));
+      if (Array.isArray(data.mustHaves)) setMustHaves(data.mustHaves);
+      if (Array.isArray(data.niceToHaves)) setNiceToHaves(data.niceToHaves);
+      setShowAutofill(false);
+      setAutofillText("");
+    } catch (error) {
+      setAutofillError("Something went wrong. Please try again or fill in manually.");
+    } finally {
+      setIsAutofilling(false);
+    }
   };
 
   return (
@@ -110,6 +156,37 @@ export default function NewJobPage() {
           Auto-fill with AI
         </button>
       </div>
+
+      {/* Autofill Modal */}
+      {showAutofill && (
+        <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4" onClick={() => !isAutofilling && setShowAutofill(false)}>
+          <div className="bg-white rounded-3xl shadow-2xl max-w-xl w-full p-6 md:p-8" onClick={e => e.stopPropagation()}>
+            <h3 className="text-lg font-bold text-slate-900 mb-1">Paste the job description</h3>
+            <p className="text-xs text-slate-500 mb-4">Paste it as-is, messy formatting and all — we'll pull out the structured fields.</p>
+            <textarea
+              value={autofillText}
+              onChange={e => setAutofillText(e.target.value)}
+              rows={10}
+              placeholder="Paste the full job description here..."
+              className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3.5 text-sm focus:bg-white focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all resize-none"
+            />
+            {autofillError && <p className="text-xs text-red-600 mt-2 font-medium">{autofillError}</p>}
+            <div className="flex items-center justify-end gap-3 mt-5">
+              <button type="button" onClick={() => setShowAutofill(false)} disabled={isAutofilling} className="px-5 py-2.5 text-sm font-bold text-slate-500 hover:text-slate-900 transition-colors">
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={runAutofill}
+                disabled={isAutofilling}
+                className="px-6 py-2.5 bg-slate-900 text-white font-bold rounded-full hover:bg-primary transition-all disabled:opacity-70 flex items-center gap-2"
+              >
+                {isAutofilling ? <><Loader2 size={16} className="animate-spin" /> Reading...</> : "Extract Details"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Main Form */}
       <form onSubmit={handleSubmit} className="space-y-6 md:space-y-8">
@@ -232,6 +309,25 @@ export default function NewJobPage() {
             placeholder="e.g. https://calendly.com/you/interview or 'Reply to this WhatsApp group: ...'"
             className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3.5 text-sm focus:bg-white focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all"
           />
+
+          <div className="flex items-center justify-between gap-4 mt-6 pt-6 border-t border-slate-100">
+            <div className="flex gap-3 items-start">
+              <div className="bg-slate-100 p-2 rounded-lg text-slate-600 shrink-0"><FileText size={18} /></div>
+              <div>
+                <p className="text-sm font-bold text-slate-900">Ask for a CV during screening</p>
+                <p className="text-xs text-slate-500 mt-1">When a candidate claims a qualification (e.g. "I have an HND"), Nova will ask them to attach their CV to verify it, and skip questions the CV already answers.</p>
+              </div>
+            </div>
+            <label className="relative inline-flex items-center cursor-pointer shrink-0">
+              <input
+                type="checkbox"
+                className="sr-only peer"
+                checked={requestCv}
+                onChange={() => setRequestCv(!requestCv)}
+              />
+              <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary"></div>
+            </label>
+          </div>
         </div>
 
         {/* Submit Actions */}
