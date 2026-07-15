@@ -2,7 +2,7 @@ import { createClient } from "@/utils/supabase/server";
 import { notFound } from "next/navigation";
 import CandidateChatUI from "./CandidateChatUI";
 
-export default async function CandidateApplyPage({ params }: { params: { slug: string } }) {
+export default async function CandidateApplyPage({ params }: { params: Promise<{ slug: string }> }) {
   // 1. Await params to prevent Next.js routing crashes
   const resolvedParams = await params;
   const supabase = await createClient();
