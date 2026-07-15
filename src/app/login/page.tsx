@@ -1,13 +1,13 @@
 "use client";
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, Suspense } from 'react';
 import Link from 'next/link';
 import { Zap, ArrowRight, AlertCircle, Eye, EyeOff, ShieldCheck, Loader2 } from 'lucide-react';
 import { useSearchParams } from 'next/navigation';
 import { useFormStatus } from 'react-dom';
 import { login, signup } from './action';
 
-export default function AuthPage() {
+function AuthPageInner() {
   const [isLogin, setIsLogin] = useState(true);
   const [showPassword, setShowPassword] = useState(false);
   const searchParams = useSearchParams();
@@ -189,6 +189,16 @@ export default function AuthPage() {
         </div>
       </div>
     </main>
+  );
+}
+
+// Suspense boundary required by Next.js because useSearchParams() reads
+// a value that's only known at request time, not at static build time.
+export default function LoginPage() {
+  return (
+    <Suspense fallback={null}>
+      <AuthPageInner />
+    </Suspense>
   );
 }
 
