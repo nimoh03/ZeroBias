@@ -2,11 +2,13 @@
 
 import { useState, useTransition, KeyboardEvent } from "react";
 import Link from "next/link";
-import { ArrowLeft, Sparkles, Briefcase, Target, CheckCircle2, Loader2, X, FileText } from "lucide-react";
+import { ArrowLeft, Sparkles, Briefcase, Target, CheckCircle2, Loader2, X, FileText, Gauge, MessageSquareText, ListChecks } from "lucide-react";
 import { createJobAction } from "./action";
+import ConversationalBuilder from "./ConversationalBuilder";
 
 export default function NewJobPage() {
   const [isPending, startTransition] = useTransition();
+  const [mode, setMode] = useState<'manual' | 'conversational'>('manual');
 
   // Basic Info State
   const [formData, setFormData] = useState({
@@ -18,6 +20,7 @@ export default function NewJobPage() {
   });
 
   const [requestCv, setRequestCv] = useState(false);
+  const [screeningRigor, setScreeningRigor] = useState<"thorough" | "trusting">("thorough");
 
   // Premium List States (Arrays instead of strings)
   const [mustHaves, setMustHaves] = useState<string[]>([]);
@@ -76,6 +79,7 @@ export default function NewJobPage() {
           mustHaves: mustHaves.map(item => `- ${item}`).join('\n'),
           niceToHaves: niceToHaves.map(item => `- ${item}`).join('\n'),
           requestCv,
+          screeningRigor,
         };
         await createJobAction(payload);
       } catch (error) {
@@ -139,6 +143,28 @@ export default function NewJobPage() {
         </div>
       </div>
 
+      {/* Format toggle */}
+      <div className="inline-flex items-center gap-1 bg-slate-100 p-1 rounded-full mb-8">
+        <button
+          type="button"
+          onClick={() => setMode('manual')}
+          className={`flex items-center gap-1.5 px-4 py-2 rounded-full text-sm font-bold transition-all ${mode === 'manual' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+        >
+          <ListChecks size={15} /> Guided Form
+        </button>
+        <button
+          type="button"
+          onClick={() => setMode('conversational')}
+          className={`flex items-center gap-1.5 px-4 py-2 rounded-full text-sm font-bold transition-all ${mode === 'conversational' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+        >
+          <MessageSquareText size={15} /> Just Tell Nova
+        </button>
+      </div>
+
+      {mode === 'conversational' && <ConversationalBuilder />}
+
+      {mode === 'manual' && (
+      <>
       {/* AI Auto-fill Magic Card */}
       <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-100 rounded-3xl p-5 md:p-6 mb-8 flex flex-col md:flex-row items-center gap-4 md:gap-6 shadow-sm">
         <div className="w-12 h-12 md:w-14 md:h-14 bg-white rounded-2xl flex items-center justify-center text-primary shadow-sm shrink-0">
@@ -328,6 +354,40 @@ export default function NewJobPage() {
               <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary"></div>
             </label>
           </div>
+
+          <div className="mt-6 pt-6 border-t border-slate-100">
+            <div className="flex gap-3 items-start mb-4">
+              <div className="bg-slate-100 p-2 rounded-lg text-slate-600 shrink-0"><Gauge size={18} /></div>
+              <div>
+                <p className="text-sm font-bold text-slate-900">Screening style</p>
+                <p className="text-xs text-slate-500 mt-1">How hard should Nova push before accepting a claim?</p>
+              </div>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <button
+                type="button"
+                onClick={() => setScreeningRigor("thorough")}
+                className={`text-left p-4 rounded-xl border-2 transition-all ${screeningRigor === "thorough" ? 'border-primary bg-blue-50/50' : 'border-slate-200 hover:border-slate-300'}`}
+              >
+                <div className="flex items-center justify-between mb-1">
+                  <p className="text-sm font-bold text-slate-900">Thorough</p>
+                  {screeningRigor === "thorough" && <CheckCircle2 className="text-primary" size={16} />}
+                </div>
+                <p className="text-xs text-slate-500">Nova asks for one concrete specific before accepting a skill or dealbreaker claim.</p>
+              </button>
+              <button
+                type="button"
+                onClick={() => setScreeningRigor("trusting")}
+                className={`text-left p-4 rounded-xl border-2 transition-all ${screeningRigor === "trusting" ? 'border-primary bg-blue-50/50' : 'border-slate-200 hover:border-slate-300'}`}
+              >
+                <div className="flex items-center justify-between mb-1">
+                  <p className="text-sm font-bold text-slate-900">Trusting</p>
+                  {screeningRigor === "trusting" && <CheckCircle2 className="text-primary" size={16} />}
+                </div>
+                <p className="text-xs text-slate-500">Nova takes a clear, direct answer at face value and moves on.</p>
+              </button>
+            </div>
+          </div>
         </div>
 
         {/* Submit Actions */}
@@ -349,6 +409,8 @@ export default function NewJobPage() {
         </div>
 
       </form>
+      </>
+      )}
     </div>
   );
 }

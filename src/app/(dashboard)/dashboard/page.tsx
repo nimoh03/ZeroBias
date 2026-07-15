@@ -1,7 +1,7 @@
 import { createClient } from "@/utils/supabase/server";
 import Link from 'next/link';
 import { 
-  FileText, Sparkles, 
+  FileText,
   Plus, FolderOpen, Briefcase, CheckCircle2, XCircle, Clock, ArrowRight,
 } from 'lucide-react';
 
@@ -175,7 +175,7 @@ export default async function DashboardOverview() {
                 {recentActivity.map((c) => {
                   const style = statusStyles[c.status] || statusStyles.screening;
                   const Icon = style.icon;
-                  const name = [c.first_name, c.last_name].filter(Boolean).join(' ') || 'Unnamed candidate';
+                  const name = c.name || 'Unnamed candidate';
                   return (
                     <Link
                       key={c.id}
@@ -201,21 +201,6 @@ export default async function DashboardOverview() {
             <button className="w-full py-3.5 bg-slate-50 text-sm font-bold text-slate-500 hover:text-primary transition-colors border-t border-slate-200">
               View Full Activity Log
             </button>
-          </div>
-
-          {/* AI Insights Banner */}
-          <div className="relative overflow-hidden bg-gradient-to-br from-primary to-blue-700 p-6 rounded-2xl text-white shadow-lg shadow-primary/20">
-            <div className="absolute -right-10 -top-10 w-32 h-32 bg-white/10 rounded-full blur-2xl pointer-events-none"></div>
-            <div className="relative z-10">
-              <div className="flex items-center gap-2 mb-3">
-                <Sparkles size={18} className="text-blue-200" />
-                <p className="text-xs font-extrabold uppercase tracking-widest text-blue-200">AI Insights</p>
-              </div>
-              <h4 className="text-lg font-bold leading-tight mb-2">Ready to screen candidates.</h4>
-              <p className="text-sm text-blue-100 font-medium leading-relaxed">
-                Once candidates apply, Nova will highlight "Diamond" matches based on your criteria.
-              </p>
-            </div>
           </div>
         </aside>
 

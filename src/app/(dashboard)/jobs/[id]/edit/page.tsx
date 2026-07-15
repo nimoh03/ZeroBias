@@ -41,6 +41,7 @@ export default async function EditJobPage({ params }: { params: Promise<{ id: st
         description: job.description || "",
         finalAction: job.final_action || "",
         requestCv: !!job.request_cv,
+        screeningRigor: job.screening_rigor === "trusting" ? "trusting" : "thorough",
         mustHaves: parseTags(job.must_haves),
         niceToHaves: parseTags(job.nice_to_haves),
       }}

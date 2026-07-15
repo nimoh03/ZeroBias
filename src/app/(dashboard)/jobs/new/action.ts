@@ -13,6 +13,7 @@ export async function createJobAction(data: {
   niceToHaves: string;
   finalAction: string;
   requestCv: boolean;
+  screeningRigor?: "thorough" | "trusting";
 }) {
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
@@ -36,6 +37,7 @@ export async function createJobAction(data: {
     nice_to_haves: data.niceToHaves,
     final_action: data.finalAction || null,
     request_cv: !!data.requestCv,
+    screening_rigor: data.screeningRigor === "trusting" ? "trusting" : "thorough",
     public_slug: public_slug,
     status: 'active'
   });

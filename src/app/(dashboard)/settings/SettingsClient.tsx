@@ -123,26 +123,34 @@ export default function SettingsClient({
               </div>
             </div>
 
-            <div className="p-4 bg-primary/5 border border-primary/20 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-              <div className="flex gap-3 items-start">
-                <CheckCircle2 className="text-primary shrink-0 mt-0.5" size={20} />
-                <div>
-                  <p className="text-sm font-bold text-on-surface">HireFlow Managed Intelligence</p>
-                  <p className="text-xs text-on-surface-variant mt-1">Use our default managed keys. Best for stability and speed.</p>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <button
+                type="button"
+                onClick={() => setUseCustomKeys(false)}
+                className={`text-left p-4 rounded-xl border-2 transition-all ${!useCustomKeys ? 'border-primary bg-primary/5' : 'border-outline-variant bg-surface hover:border-outline'}`}
+              >
+                <div className="flex items-center justify-between mb-1">
+                  <p className="text-sm font-bold text-on-surface">HireFlow Managed Keys</p>
+                  {!useCustomKeys && <CheckCircle2 className="text-primary" size={18} />}
                 </div>
-              </div>
-              <label className="relative inline-flex items-center cursor-pointer shrink-0">
-                <input
-                  type="checkbox"
-                  name="useOwnKeys"
-                  className="sr-only peer"
-                  checked={useCustomKeys}
-                  onChange={() => setUseCustomKeys(!useCustomKeys)}
-                />
-                <div className="w-11 h-6 bg-outline-variant peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary"></div>
-              </label>
+                <p className="text-xs text-on-surface-variant">Use our default keys. Best for stability and speed — recommended.</p>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setUseCustomKeys(true)}
+                className={`text-left p-4 rounded-xl border-2 transition-all ${useCustomKeys ? 'border-primary bg-primary/5' : 'border-outline-variant bg-surface hover:border-outline'}`}
+              >
+                <div className="flex items-center justify-between mb-1">
+                  <p className="text-sm font-bold text-on-surface">My Own Keys</p>
+                  {useCustomKeys && <CheckCircle2 className="text-primary" size={18} />}
+                </div>
+                <p className="text-xs text-on-surface-variant">Use your own Groq/Gemini keys. Costs bill to your provider account.</p>
+              </button>
+
+              {/* Real checkbox stays in the DOM so the form action still reads it — just visually hidden, driven by the cards above. */}
+              <input type="checkbox" name="useOwnKeys" checked={useCustomKeys} onChange={() => {}} className="hidden" />
             </div>
-            <p className="text-xs text-on-surface-variant -mt-2">Toggle on to bring your own keys instead.</p>
 
             {useCustomKeys && (
               <div className="space-y-5 pt-4 border-t border-outline-variant animate-in slide-in-from-top-2">

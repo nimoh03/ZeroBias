@@ -15,6 +15,7 @@ export async function updateJobAction(
     niceToHaves: string;
     finalAction: string;
     requestCv: boolean;
+    screeningRigor?: "thorough" | "trusting";
   }
 ) {
   const supabase = await createClient();
@@ -36,6 +37,7 @@ export async function updateJobAction(
       nice_to_haves: data.niceToHaves,
       final_action: data.finalAction || null,
       request_cv: !!data.requestCv,
+      screening_rigor: data.screeningRigor === "trusting" ? "trusting" : "thorough",
     })
     .eq('id', jobId)
     .eq('recruiter_id', user.id);
