@@ -220,7 +220,7 @@ export default function CandidateChatUI({ job }: { job: any }) {
             ) : (
               <>
                 <p className="text-sm font-bold text-slate-900">Screening complete</p>
-                <p className="text-xs text-slate-500 mt-1">Thanks for your time — we wish you the best.</p>
+                <p className="text-xs text-slate-500 mt-1">Thanks for your time — the team will review your answers and get back to you.</p>
               </>
             )}
           </div>

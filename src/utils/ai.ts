@@ -77,17 +77,27 @@ async function callGemini(apiKey: string, model: string, messages: ChatMessage[]
   return text;
 }
 
-export async function getAIReply({
+// Status codes worth a second try — rate limits and transient server-side
+// hiccups on the provider's end. Auth/config errors (401/403/404) won't
+// fix themselves by waiting, so those fail fast instead of stalling the
+// candidate for no reason.
+const RETRYABLE_STATUS = /\s(429|500|502|503|504)\b/;
+
+function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function attemptAllProviders({
   groqKey,
   geminiKey,
   messages,
-  maxTokens = 450,
+  maxTokens,
 }: {
   groqKey?: string | null;
   geminiKey?: string | null;
   messages: ChatMessage[];
-  maxTokens?: number;
-}): Promise<{ text: string; provider: string; model: string }> {
+  maxTokens: number;
+}): Promise<{ text: string; provider: string; model: string } | { errors: string[] }> {
   const errors: string[] = [];
 
   if (groqKey) {
@@ -112,7 +122,39 @@ export async function getAIReply({
     }
   }
 
-  console.error("🔥 ALL AI PROVIDERS FAILED:", errors.join(" | "));
+  return { errors };
+}
+
+export async function getAIReply({
+  groqKey,
+  geminiKey,
+  messages,
+  maxTokens = 450,
+}: {
+  groqKey?: string | null;
+  geminiKey?: string | null;
+  messages: ChatMessage[];
+  maxTokens?: number;
+}): Promise<{ text: string; provider: string; model: string }> {
+  const first = await attemptAllProviders({ groqKey, geminiKey, messages, maxTokens });
+  if (!("errors" in first)) return first;
+
+  // Every model on both providers failed. If it looks transient (rate
+  // limit or a provider-side hiccup, not a bad key or missing model),
+  // wait briefly — this is usually a shared free-tier rate limit that
+  // clears in a second or two — and take one more full pass before
+  // giving up on the candidate's message entirely.
+  const looksTransient = first.errors.some((e) => RETRYABLE_STATUS.test(e));
+  if (looksTransient) {
+    console.error("⚠️ ALL AI PROVIDERS FAILED ON FIRST PASS, RETRYING:", first.errors.join(" | "));
+    await sleep(1500);
+    const second = await attemptAllProviders({ groqKey, geminiKey, messages, maxTokens });
+    if (!("errors" in second)) return second;
+    console.error("🔥 ALL AI PROVIDERS FAILED ON RETRY:", second.errors.join(" | "));
+    throw new Error("All AI providers are currently unavailable.");
+  }
+
+  console.error("🔥 ALL AI PROVIDERS FAILED:", first.errors.join(" | "));
   throw new Error("All AI providers are currently unavailable.");
 }
 
