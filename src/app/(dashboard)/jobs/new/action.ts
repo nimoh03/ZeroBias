@@ -11,6 +11,7 @@ export async function createJobAction(data: {
   description: string;
   mustHaves: string;
   niceToHaves: string;
+  finalAction: string;
 }) {
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
@@ -32,6 +33,7 @@ export async function createJobAction(data: {
     description: data.description,
     must_haves: data.mustHaves,
     nice_to_haves: data.niceToHaves,
+    final_action: data.finalAction || null,
     public_slug: public_slug,
     status: 'active'
   });

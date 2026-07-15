@@ -14,6 +14,7 @@ export default function NewJobPage() {
     location: "",
     jobType: "Full-time",
     description: "",
+    finalAction: "",
   });
 
   // Premium List States (Arrays instead of strings)
@@ -212,6 +213,25 @@ export default function NewJobPage() {
             </div>
 
           </div>
+        </div>
+
+        {/* Section 3: What happens when they qualify */}
+        <div className="bg-white rounded-2xl md:rounded-3xl border border-slate-200 p-5 md:p-8 shadow-sm">
+          <div className="flex items-center gap-3 mb-6">
+            <div className="bg-emerald-50 p-2 rounded-lg text-emerald-600"><CheckCircle2 size={20} /></div>
+            <h2 className="text-lg md:text-xl font-bold text-slate-900">3. What happens when they qualify?</h2>
+          </div>
+          <p className="text-xs text-slate-500 mb-3">
+            Paste a link (Calendly, Google Meet, a WhatsApp group invite — anything) or just type plain instructions.
+            Qualified candidates see this the moment Nova finishes screening them. Leave blank to just say "we'll be in touch."
+          </p>
+          <input
+            name="finalAction"
+            value={formData.finalAction}
+            onChange={handleChange}
+            placeholder="e.g. https://calendly.com/you/interview or 'Reply to this WhatsApp group: ...'"
+            className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3.5 text-sm focus:bg-white focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all"
+          />
         </div>
 
         {/* Submit Actions */}
