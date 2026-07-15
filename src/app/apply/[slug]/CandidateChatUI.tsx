@@ -16,6 +16,7 @@ export default function CandidateChatUI({ job }: { job: any }) {
   const [isUploading, setIsUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   const storageKey = `${STORAGE_KEY_PREFIX}${job.public_slug}`;
   const companyName = job.profiles?.company_name || "the hiring team";
@@ -66,6 +67,7 @@ export default function CandidateChatUI({ job }: { job: any }) {
     const newMessages = [...messages, userMessage];
     setMessages(newMessages);
     setInputText("");
+    if (textareaRef.current) textareaRef.current.style.height = 'auto';
     setIsLoading(true);
 
     try {
@@ -132,8 +134,18 @@ export default function CandidateChatUI({ job }: { job: any }) {
   const finalActionIsLink = typeof job.final_action === 'string' && /^https?:\/\//i.test(job.final_action.trim());
 
   return (
-    <div className="flex flex-col h-dvh max-w-3xl mx-auto bg-white border-x border-slate-100 shadow-2xl">
-
+    <div
+      className="flex flex-col h-screen max-w-3xl mx-auto bg-white border-x border-slate-100 shadow-2xl"
+      style={{ height: '100dvh' }}
+    >
+      {/*
+        height: 100vh from the Tailwind class is the baseline that works
+        everywhere, including old Safari (e.g. iPhone 6s, capped at iOS 15).
+        The inline 100dvh style is a progressive enhancement — modern
+        browsers use it (keyboard-aware height), and browsers that don't
+        understand the dvh unit simply ignore that single invalid
+        declaration and keep using the 100vh class instead of breaking.
+      */}
       {/* Header */}
       <header className="shrink-0 h-16 px-5 flex items-center justify-between border-b border-slate-100 bg-white z-10">
         <div>
@@ -214,7 +226,7 @@ export default function CandidateChatUI({ job }: { job: any }) {
           </div>
         ) : (
           <>
-            <form onSubmit={handleSend} className="relative flex items-center">
+            <form onSubmit={handleSend} className="relative flex items-end">
               <input
                 ref={fileInputRef}
                 type="file"
@@ -227,22 +239,34 @@ export default function CandidateChatUI({ job }: { job: any }) {
                 onClick={() => fileInputRef.current?.click()}
                 disabled={!candidateId || isUploading}
                 title={!candidateId ? "Send your first message before attaching a CV" : "Attach your CV"}
-                className="absolute left-1.5 w-9 h-9 flex items-center justify-center rounded-full text-slate-400 hover:text-primary hover:bg-slate-100 transition-colors disabled:opacity-40 disabled:hover:bg-transparent shrink-0"
+                className="absolute left-1.5 bottom-1.5 w-9 h-9 flex items-center justify-center rounded-full text-slate-400 hover:text-primary hover:bg-slate-100 transition-colors disabled:opacity-40 disabled:hover:bg-transparent shrink-0"
               >
                 {isUploading ? <Loader2 size={18} className="animate-spin" /> : <Plus size={20} />}
               </button>
-              <input
-                type="text"
+              <textarea
+                ref={textareaRef}
                 value={inputText}
-                onChange={(e) => setInputText(e.target.value)}
+                onChange={(e) => {
+                  setInputText(e.target.value);
+                  const el = e.target;
+                  el.style.height = 'auto';
+                  el.style.height = Math.min(el.scrollHeight, 120) + 'px';
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault();
+                    handleSend(e as unknown as React.FormEvent);
+                  }
+                }}
                 disabled={isLoading}
+                rows={1}
                 placeholder={isLoading ? "..." : "Type your message..."}
-                className="w-full bg-slate-100 border border-transparent rounded-full pl-12 pr-14 py-3.5 text-[16px] focus:bg-white focus:border-primary focus:ring-4 focus:ring-primary/10 outline-none transition-all disabled:opacity-50"
+                className="w-full bg-slate-100 border border-transparent rounded-3xl pl-12 pr-14 py-3.5 text-[16px] leading-snug focus:bg-white focus:border-primary focus:ring-4 focus:ring-primary/10 outline-none transition-all disabled:opacity-50 resize-none overflow-y-auto max-h-[120px]"
               />
               <button
                 type="submit"
                 disabled={!inputText.trim() || isLoading}
-                className="absolute right-1.5 w-9 h-9 bg-primary text-white rounded-full flex items-center justify-center hover:bg-blue-700 transition-colors disabled:opacity-40 disabled:bg-slate-300 shrink-0"
+                className="absolute right-1.5 bottom-1.5 w-9 h-9 bg-primary text-white rounded-full flex items-center justify-center hover:bg-blue-700 transition-colors disabled:opacity-40 disabled:bg-slate-300 shrink-0"
               >
                 <Send size={16} className="ml-0.5" />
               </button>
