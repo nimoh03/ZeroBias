@@ -148,7 +148,19 @@ Include this block on every turn from the moment you first learn either value, s
     // could never be parsed AND the truncated raw JSON leaked straight
     // into the candidate-facing message (see failsafe #3 below for the
     // belt-and-suspenders fix on top of this).
-    const { text: rawText } = await getAIReply({ groqKey, geminiKey, messages: apiMessages, maxTokens: 900 });
+    const { text: rawText, provider, model, usage } = await getAIReply({ groqKey, geminiKey, messages: apiMessages, maxTokens: 900 });
+
+    // Token usage per AI call, tagged with candidateId so you can sum
+    // across a whole conversation later (or wire this into a DB table —
+    // see ai_usage_logs suggestion — instead of/in addition to console).
+    console.log("🔢 TOKEN USAGE:", {
+      candidateId,
+      provider,
+      model,
+      promptTokens: usage.promptTokens,
+      completionTokens: usage.completionTokens,
+      totalTokens: usage.totalTokens,
+    });
 
     // Small/free-tier models occasionally loop on themselves and repeat
     // a sentence or question 2-3 times in one reply — collapse those

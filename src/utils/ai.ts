@@ -17,6 +17,11 @@
 
 export type ChatMessage = { role: "system" | "user" | "assistant"; content: string };
 
+// Token usage returned alongside every AI reply so callers can log/sum
+// cost per candidate/conversation. Both providers report this natively —
+// we were previously discarding it.
+export type TokenUsage = { promptTokens: number; completionTokens: number; totalTokens: number };
+
 // qwen/qwen3.6-27b deliberately left out of the fallback list: it's a
 // preview/vision model, not meant for production text screening, and it
 // was the source of raw <think> reasoning tokens leaking into candidate
@@ -193,7 +198,7 @@ export function enforceSingleQuestion(text: string): string {
   return kept.join(" ").trim();
 }
 
-async function callGroq(apiKey: string, model: string, messages: ChatMessage[], maxTokens: number): Promise<string> {
+async function callGroq(apiKey: string, model: string, messages: ChatMessage[], maxTokens: number): Promise<{ text: string; usage: TokenUsage }> {
   const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
     method: "POST",
     headers: {
@@ -220,10 +225,20 @@ async function callGroq(apiKey: string, model: string, messages: ChatMessage[], 
   const data = await response.json();
   const text = data?.choices?.[0]?.message?.content;
   if (!text) throw new Error(`Groq/${model} returned no content`);
-  return stripHarmonyTokens(stripThinkTags(text));
+
+  // OpenAI-compatible usage block — always present on a successful
+  // Groq chat completion, but default to 0s defensively in case a
+  // future response shape omits it.
+  const usage: TokenUsage = {
+    promptTokens: data?.usage?.prompt_tokens ?? 0,
+    completionTokens: data?.usage?.completion_tokens ?? 0,
+    totalTokens: data?.usage?.total_tokens ?? 0,
+  };
+
+  return { text: stripHarmonyTokens(stripThinkTags(text)), usage };
 }
 
-async function callGemini(apiKey: string, model: string, messages: ChatMessage[], maxTokens: number): Promise<string> {
+async function callGemini(apiKey: string, model: string, messages: ChatMessage[], maxTokens: number): Promise<{ text: string; usage: TokenUsage }> {
   const systemMsg = messages.find(m => m.role === "system");
   const turns = messages.filter(m => m.role !== "system");
 
@@ -255,7 +270,16 @@ async function callGemini(apiKey: string, model: string, messages: ChatMessage[]
   const data = await response.json();
   const text = data?.candidates?.[0]?.content?.parts?.map((p: any) => p.text).join("");
   if (!text) throw new Error(`Gemini/${model} returned no content`);
-  return stripThinkTags(text);
+
+  // Gemini reports usage under usageMetadata rather than an
+  // OpenAI-style usage block — different field names, same idea.
+  const usage: TokenUsage = {
+    promptTokens: data?.usageMetadata?.promptTokenCount ?? 0,
+    completionTokens: data?.usageMetadata?.candidatesTokenCount ?? 0,
+    totalTokens: data?.usageMetadata?.totalTokenCount ?? 0,
+  };
+
+  return { text: stripThinkTags(text), usage };
 }
 
 // Status codes worth a second try — rate limits and transient server-side
@@ -278,14 +302,14 @@ async function attemptAllProviders({
   geminiKey?: string | null;
   messages: ChatMessage[];
   maxTokens: number;
-}): Promise<{ text: string; provider: string; model: string } | { errors: string[] }> {
+}): Promise<{ text: string; provider: string; model: string; usage: TokenUsage } | { errors: string[] }> {
   const errors: string[] = [];
 
   if (geminiKey) {
     for (const model of GEMINI_MODELS) {
       try {
-        const text = await callGemini(geminiKey, model, messages, maxTokens);
-        return { text, provider: "gemini", model };
+        const { text, usage } = await callGemini(geminiKey, model, messages, maxTokens);
+        return { text, provider: "gemini", model, usage };
       } catch (err: any) {
         errors.push(err.message || String(err));
       }
@@ -295,8 +319,8 @@ async function attemptAllProviders({
   if (groqKey) {
     for (const model of GROQ_MODELS) {
       try {
-        const text = await callGroq(groqKey, model, messages, maxTokens);
-        return { text, provider: "groq", model };
+        const { text, usage } = await callGroq(groqKey, model, messages, maxTokens);
+        return { text, provider: "groq", model, usage };
       } catch (err: any) {
         errors.push(err.message || String(err));
       }
@@ -316,7 +340,7 @@ export async function getAIReply({
   geminiKey?: string | null;
   messages: ChatMessage[];
   maxTokens?: number;
-}): Promise<{ text: string; provider: string; model: string }> {
+}): Promise<{ text: string; provider: string; model: string; usage: TokenUsage }> {
   const first = await attemptAllProviders({ groqKey, geminiKey, messages, maxTokens });
   if (!("errors" in first)) return first;
 
@@ -353,7 +377,7 @@ export async function extractCvSummaryWithGemini({
   fileBase64: string;
   mimeType: string;
   prompt: string;
-}): Promise<string | null> {
+}): Promise<{ text: string; usage: TokenUsage } | null> {
   if (!geminiKey) return null;
 
   for (const model of GEMINI_MODELS) {
@@ -378,7 +402,14 @@ export async function extractCvSummaryWithGemini({
       if (!response.ok) continue;
       const data = await response.json();
       const text = data?.candidates?.[0]?.content?.parts?.map((p: any) => p.text).join("");
-      if (text) return text;
+      if (text) {
+        const usage: TokenUsage = {
+          promptTokens: data?.usageMetadata?.promptTokenCount ?? 0,
+          completionTokens: data?.usageMetadata?.candidatesTokenCount ?? 0,
+          totalTokens: data?.usageMetadata?.totalTokenCount ?? 0,
+        };
+        return { text, usage };
+      }
     } catch {
       // try next model
     }

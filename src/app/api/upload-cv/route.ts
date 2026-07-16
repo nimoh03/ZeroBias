@@ -59,12 +59,24 @@ export async function POST(req: Request) {
         }
       }
 
-      cvSummary = await extractCvSummaryWithGemini({
+      const cvResult = await extractCvSummaryWithGemini({
         geminiKey,
         fileBase64: fileBuffer.toString("base64"),
         mimeType: file.type,
         prompt: "You are extracting a short recruiter-facing summary from this CV/resume for a pre-interview screening assistant to use as verified context. In under 120 words, plain text, no markdown: list highest education/qualification, total years of relevant experience, key skills/technologies, and most recent role/employer. Be factual and concise — this will be treated as verified fact, so only include what the document actually states.",
       });
+
+      if (cvResult) {
+        cvSummary = cvResult.text;
+        console.log("🔢 TOKEN USAGE:", {
+          candidateId,
+          source: "cv_extraction",
+          provider: "gemini",
+          promptTokens: cvResult.usage.promptTokens,
+          completionTokens: cvResult.usage.completionTokens,
+          totalTokens: cvResult.usage.totalTokens,
+        });
+      }
     }
 
     const { error: updateError } = await supabase
