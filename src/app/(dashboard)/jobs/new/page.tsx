@@ -107,6 +107,9 @@ export default function NewJobPage() {
         body: JSON.stringify({ rawText: autofillText }),
       });
       const data = await response.json();
+      if (data.usage) {
+        console.log("🔢 TOKEN USAGE (autofill):", data.usage);
+      }
       if (!response.ok) {
         setAutofillError(data.error || "Couldn't parse that. Please try again or fill in manually.");
         return;

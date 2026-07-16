@@ -43,7 +43,7 @@ Rules for description:
 - Write a short, plain-prose summary a candidate would read, based on the title, location, and what the recruiter listed.
 - Don't invent responsibilities or perks that weren't implied.`;
 
-    const { text } = await getAIReply({
+    const { text, provider, model, usage } = await getAIReply({
       groqKey,
       geminiKey,
       messages: [
@@ -51,6 +51,17 @@ Rules for description:
         { role: "user", content: rawText.slice(0, 3000) },
       ],
       maxTokens: 500,
+    });
+
+    // Token usage for this job-builder call — was previously discarded entirely.
+    console.log("🔢 TOKEN USAGE:", {
+      source: "job_builder",
+      userId: user.id,
+      provider,
+      model,
+      promptTokens: usage.promptTokens,
+      completionTokens: usage.completionTokens,
+      totalTokens: usage.totalTokens,
     });
 
     const cleaned = text.replace(/```json|```/g, "").trim();
@@ -63,6 +74,7 @@ Rules for description:
     return Response.json({
       requirements: parsed.requirements.filter((i: unknown) => typeof i === "string" && i.trim()),
       description: typeof parsed.description === "string" ? parsed.description : "",
+      usage,
     });
   } catch (error: any) {
     console.error("🔥 JOB BUILDER PARSE FAILED:", error.message || error);

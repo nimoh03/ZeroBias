@@ -46,6 +46,7 @@ export async function POST(req: Request) {
     // rate limited, or a Word doc it can't parse), we still keep the
     // upload and just skip the summary. Never block on this.
     let cvSummary: string | null = null;
+    let cvUsage: { promptTokens: number; completionTokens: number; totalTokens: number } | null = null;
     if (file.type === "application/pdf") {
       let geminiKey: string | null | undefined = process.env.GEMINI_API_KEY;
       if (recruiterId) {
@@ -68,6 +69,7 @@ export async function POST(req: Request) {
 
       if (cvResult) {
         cvSummary = cvResult.text;
+        cvUsage = cvResult.usage;
         console.log("🔢 TOKEN USAGE:", {
           candidateId,
           source: "cv_extraction",
@@ -88,7 +90,7 @@ export async function POST(req: Request) {
       console.error("🔥 COULD NOT SAVE CV DATA:", updateError.message);
     }
 
-    return Response.json({ url: cvUrl, filename: file.name, summary: cvSummary });
+    return Response.json({ url: cvUrl, filename: file.name, summary: cvSummary, usage: cvUsage });
   } catch (error: any) {
     console.error("🔥 CV UPLOAD ROUTE CRASHED:", error.message || error);
     return Response.json({ error: "Something went wrong uploading your CV." }, { status: 500 });

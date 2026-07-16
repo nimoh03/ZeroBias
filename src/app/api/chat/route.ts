@@ -338,6 +338,7 @@ Include this block on every turn from the moment you first learn either value, s
       candidateId,
       done: !!decision,
       status: decision?.status ?? null,
+      usage,
     });
 
   } catch (error: any) {

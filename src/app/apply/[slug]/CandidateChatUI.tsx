@@ -85,6 +85,10 @@ export default function CandidateChatUI({ job }: { job: any }) {
 
       const data = await response.json();
 
+      if (data.usage) {
+        console.log("🔢 TOKEN USAGE (chat):", data.usage);
+      }
+
       if (data.candidateId && data.candidateId !== candidateId) {
         setCandidateId(data.candidateId);
       }
@@ -115,6 +119,10 @@ export default function CandidateChatUI({ job }: { job: any }) {
 
       const response = await fetch('/api/upload-cv', { method: 'POST', body: formData });
       const data = await response.json();
+
+      if (data.usage) {
+        console.log("🔢 TOKEN USAGE (cv upload):", data.usage);
+      }
 
       if (!response.ok) {
         setMessages(prev => [...prev, { role: 'assistant', content: data.error || "Couldn't upload that file — try a PDF or Word doc under 5MB." }]);

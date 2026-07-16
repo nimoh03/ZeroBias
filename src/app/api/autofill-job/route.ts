@@ -34,7 +34,7 @@ export async function POST(req: Request) {
 
 Rules: mustHaves are hard dealbreakers only (years of experience, required certifications, required skills explicitly stated as required/must-have). niceToHaves are anything stated as a plus/preferred/bonus. Keep each item short (under 12 words). If jobType isn't stated, infer the most likely one. If something genuinely isn't in the text, use an empty string or empty array rather than inventing details.`;
 
-    const { text } = await getAIReply({
+    const { text, provider, model, usage } = await getAIReply({
       groqKey,
       geminiKey,
       messages: [
@@ -44,10 +44,21 @@ Rules: mustHaves are hard dealbreakers only (years of experience, required certi
       maxTokens: 600,
     });
 
+    // Token usage for this autofill call — was previously discarded entirely.
+    console.log("🔢 TOKEN USAGE:", {
+      source: "autofill_job",
+      userId: user.id,
+      provider,
+      model,
+      promptTokens: usage.promptTokens,
+      completionTokens: usage.completionTokens,
+      totalTokens: usage.totalTokens,
+    });
+
     const cleaned = text.replace(/```json|```/g, "").trim();
     const parsed = JSON.parse(cleaned);
 
-    return Response.json(parsed);
+    return Response.json({ ...parsed, usage });
   } catch (error: any) {
     console.error("🔥 AUTOFILL FAILED:", error.message || error);
     return Response.json({ error: "Couldn't parse that just now. Please try again or fill it in manually." }, { status: 500 });
