@@ -29,7 +29,13 @@ export type ChatMessage = { role: "system" | "user" | "assistant"; content: stri
 // candidate-facing screening chat. gemini-flash-latest stays as a
 // same-provider fallback before we ever drop down to Groq.
 const GROQ_MODELS = ["openai/gpt-oss-20b", "openai/gpt-oss-120b"];
-const GEMINI_MODELS = ["gemini-2.5-flash", "gemini-flash-latest"];
+// gemini-3.5-flash tried first — strongest instruction-following of the
+// Flash tier, which matters most for holding a long, rule-dense system
+// prompt without drifting (the "asks two questions" / "repeats itself"
+// failure modes seen from smaller models). gemini-3-flash and
+// gemini-2.5-flash stay as same-provider fallbacks at lower cost if 3.5
+// is unavailable or rate limited, before ever dropping to Groq.
+const GEMINI_MODELS = ["gemini-3.5-flash", "gemini-3-flash", "gemini-2.5-flash", "gemini-flash-latest"];
 
 // Defense in depth: even with reasoning suppressed via API params, strip
 // any <think>...</think> block that slips through before it ever reaches
