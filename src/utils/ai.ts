@@ -39,12 +39,41 @@ export function stripThinkTags(text: string): string {
   return text.replace(/<think>[\s\S]*?<\/think>/gi, "").trim();
 }
 
+// Common filler/connector words stripped before comparing questions for
+// near-duplicates. Deliberately small — this only needs to strip enough
+// scaffolding ("could you tell me", "let me know", "do you have") that
+// two rewordings of the same underlying question collapse onto the same
+// bag of meaningful words (e.g. "react", "years", "experience").
+const QUESTION_STOPWORDS = new Set([
+  "a", "an", "the", "do", "does", "did", "you", "your", "have", "has", "had",
+  "could", "would", "can", "will", "tell", "let", "me", "know", "please",
+  "and", "or", "of", "for", "to", "in", "on", "is", "are", "that", "this",
+  "so", "if", "just", "one", "about", "like", "with",
+]);
+
+function questionWordSet(sentence: string): Set<string> {
+  return new Set(
+    sentence
+      .toLowerCase()
+      .replace(/[^a-z0-9\s]/g, "")
+      .split(/\s+/)
+      .filter(w => w.length > 2 && !QUESTION_STOPWORDS.has(w))
+  );
+}
+
+function jaccard(a: Set<string>, b: Set<string>): number {
+  if (a.size === 0 || b.size === 0) return 0;
+  let intersection = 0;
+  for (const w of a) if (b.has(w)) intersection++;
+  const union = a.size + b.size - intersection;
+  return union === 0 ? 0 : intersection / union;
+}
+
 // Defense against small/free-tier models looping on themselves mid-
-// generation and sending the same question 2-3 times in one reply
-// (seen from gpt-oss-20b). Splits on sentence-ending punctuation and
-// drops any sentence that's a near-duplicate of one already kept.
-// Conservative on purpose — only catches exact-ish repeats, never
-// touches genuinely different sentences even if topically similar.
+// generation and sending the same question 2-3 times in one reply (seen
+// from both gpt-oss-20b and gemini-2.5-flash). Splits on sentence-ending
+// punctuation and drops any sentence that's a near-duplicate of one
+// already kept.
 export function dedupeRepeatedSentences(text: string): string {
   // Split on sentence-ending punctuation followed by EITHER whitespace
   // (the normal case) OR directly by a capital letter with no space at
@@ -56,12 +85,28 @@ export function dedupeRepeatedSentences(text: string): string {
   // keeps the delimiter attached to the following part.
   const parts = text.split(/(?<=[.?!])\s+(?=\S)|(?<=[.?!])(?=[A-Z])/);
   const seen = new Set<string>();
+  const seenQuestionWords: Set<string>[] = [];
   const kept: string[] = [];
   for (const part of parts) {
     const trimmed = part.trim();
     if (!trimmed) continue;
     const normalized = trimmed.toLowerCase().replace(/[^a-z0-9]/g, "");
+
+    // Pass 1: exact-ish repeat (unchanged from before).
     if (normalized.length > 8 && seen.has(normalized)) continue;
+
+    // Pass 2: reworded repeat — same question asked with different
+    // scaffolding words ("how many years..." vs "could you tell me how
+    // many years..."). Only applies to sentences that are actually
+    // questions, and only compares against other questions already kept,
+    // so it never touches genuinely different statements.
+    if (trimmed.endsWith("?")) {
+      const words = questionWordSet(trimmed);
+      const isNearDuplicate = words.size >= 2 && seenQuestionWords.some(prev => jaccard(prev, words) >= 0.6);
+      if (isNearDuplicate) continue;
+      seenQuestionWords.push(words);
+    }
+
     if (normalized.length > 8) seen.add(normalized);
     kept.push(trimmed);
   }

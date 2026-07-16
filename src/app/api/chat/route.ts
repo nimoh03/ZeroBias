@@ -80,7 +80,7 @@ ${cvSection}
 ${rigorSection}
 
 HOW TO RUN THE CONVERSATION:
-1. Collect the candidate's full name and email address before anything else — you need both to keep a record, even if you don't need email for anything else in the chat. If either is still missing, that is always the next question.
+1. Collect the candidate's full name and email address before anything else — you need both to keep a record, even if you don't need email for anything else in the chat. If either is still missing, that is always the next question. The moment you learn or update either value — even mid-conversation, long before a final verdict — you MUST append a ###PROFILE### block (format given at the end of this prompt) after your reply, on every turn from that point until both are known. This is not optional and is just as important as the reply text itself.
 2. Ask exactly ONE question per message — never two, never a question plus a follow-up in the same reply, even if it feels efficient. If you notice you've written a second question mark in one message, delete everything after the first question before sending.
 2a. A "combo" is allowed ONLY when the two pieces are the same fact pair every time: name + email, or a skill + its duration ("which tools, and how long on them"). Nothing else gets bundled. Concretely: never stack a skill question, a duration question, AND a different technology/project question in one message (e.g. don't ask "did you use React, for how long, and did you use Next.js App Router in that or another project" — that's three asks wearing one question mark). If a topic needs more than one fact beyond the allowed pair, split it: ask about React first, wait for the answer, then ask about Next.js App Router as its own message. When in doubt, ask the narrower question — a candidate should never have to hold more than two things in their head to answer you.
 2b. This "one question" rule still applies even when a single question has more than one part to it (name + email, "what and when", "which tools and how long", etc). Before moving on from ANY question, mentally check off every distinct piece of information it asked for. If the candidate's reply only supplies some of those pieces, do not treat the question as answered and do not advance to a new topic — your next message must name the exact piece(s) still missing (e.g. "And your email?" or "Got the tools — how many years on them?"), never a generic full re-ask of the original question. Only move on once every part has a real answer.
@@ -229,6 +229,28 @@ Include this block on every turn from the moment you first learn either value, s
     // malformed/unterminated block, a model quirk we haven't seen yet),
     // strip it rather than ever show raw protocol syntax to a candidate.
     aiResponseText = aiResponseText.replace(/###[A-Z_]+###/g, "").replace(/\s{3,}/g, " ").trim();
+
+    // Failsafe: models occasionally skip the ###PROFILE### block entirely
+    // even when told to include it every turn (long system prompts are
+    // prone to this on smaller/free-tier models — the instruction to
+    // "also append this block" is easy to drop while focused on the
+    // reply text). An email address is unambiguous to pull out with a
+    // regex, so don't leave it entirely up to the model: scan the
+    // candidate's own messages directly and fill it in if we still don't
+    // have one on file and the model didn't supply it this turn.
+    if (!profileUpdate?.email) {
+      const { data: existing } = await supabase.from("candidates").select("email").eq("id", candidateId).single();
+      if (!existing?.email) {
+        const candidateMessages = messages.filter((m: { role: string }) => m.role === "user");
+        for (let i = candidateMessages.length - 1; i >= 0; i--) {
+          const emailMatch = candidateMessages[i].content.match(/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/);
+          if (emailMatch) {
+            profileUpdate = { ...profileUpdate, email: emailMatch[0] };
+            break;
+          }
+        }
+      }
+    }
 
     // 5. Save whichever updates we got. Decision (if present) wins on
     // name/email since it's the most authoritative, final pass.
