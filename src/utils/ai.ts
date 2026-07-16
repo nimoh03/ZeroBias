@@ -22,8 +22,14 @@ export type ChatMessage = { role: "system" | "user" | "assistant"; content: stri
 // was the source of raw <think> reasoning tokens leaking into candidate
 // messages. gpt-oss models stay as the Groq fallback with reasoning
 // explicitly suppressed below.
+//
+// gemini-2.5-flash tried first now (was second) — it holds multi-step
+// instructions (like rule 9a's "rephrase, don't repeat" logic) more
+// reliably than gemini-flash-latest, which matters most for the
+// candidate-facing screening chat. gemini-flash-latest stays as a
+// same-provider fallback before we ever drop down to Groq.
 const GROQ_MODELS = ["openai/gpt-oss-20b", "openai/gpt-oss-120b"];
-const GEMINI_MODELS = ["gemini-flash-latest", "gemini-2.5-flash"];
+const GEMINI_MODELS = ["gemini-2.5-flash", "gemini-flash-latest"];
 
 // Defense in depth: even with reasoning suppressed via API params, strip
 // any <think>...</think> block that slips through before it ever reaches

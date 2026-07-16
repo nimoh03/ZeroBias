@@ -218,10 +218,14 @@ export default function CandidateChatUI({ job }: { job: any }) {
                 <p className="text-xs text-slate-500 mt-1">A member of the team is reviewing your answers.</p>
               </>
             ) : (
-              <>
-                <p className="text-sm font-bold text-slate-900">Screening complete</p>
-                <p className="text-xs text-slate-500 mt-1">Thanks for your time — the team will review your answers and get back to you.</p>
-              </>
+              // Nova's own closing message (already shown as the last chat
+              // bubble above) already tells the candidate their answers will
+              // be reviewed — repeating that sentence in a banner under it
+              // was redundant. Just a quiet visual "this is done" cue now.
+              <div className="flex items-center justify-center gap-2 text-slate-400">
+                <CheckCircle2 size={16} />
+                <p className="text-xs font-semibold">Response recorded</p>
+              </div>
             )}
           </div>
         ) : (
