@@ -1,5 +1,5 @@
 import { createAdminClient } from "@/utils/supabase/admin";
-import { getAIReply, ChatMessage, dedupeRepeatedSentences } from "@/utils/ai";
+import { getAIReply, ChatMessage, dedupeRepeatedSentences, enforceSingleQuestion } from "@/utils/ai";
 
 export const maxDuration = 45;
 
@@ -152,6 +152,15 @@ Include this block on every turn from the moment you first learn either value, s
     // a sentence or question 2-3 times in one reply — collapse those
     // before we do anything else with the text.
     let aiResponseText = dedupeRepeatedSentences(rawText);
+
+    // A different failure than the loop above: the model simulates a
+    // whole extra turn — asks a question, fake-acknowledges an answer it
+    // never got ("Thanks for letting me know."), then asks a second,
+    // different question. dedupeRepeatedSentences doesn't catch this
+    // because the two questions aren't near-duplicates of each other.
+    // Run this second pass to hard-cut the reply down to a single turn.
+    aiResponseText = enforceSingleQuestion(aiResponseText);
+
     let decision: {
       status: "qualified" | "rejected" | "needs_review";
       score: number;

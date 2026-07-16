@@ -116,6 +116,63 @@ export function dedupeRepeatedSentences(text: string): string {
   return kept.join(" ").trim();
 }
 
+// Defense against a different (and more common, on small/free-tier
+// models) failure than the repeat loop above: the model simulates a
+// WHOLE extra conversational turn in one completion instead of stopping
+// after its own turn. The tell is always the same shape — one real
+// question, then a sentence that only makes sense as a reply to an
+// answer that was never actually given ("Thanks for letting me know.",
+// "Got it, thanks.", "Perfect."), then a second, DIFFERENT question.
+// dedupeRepeatedSentences doesn't catch this because the two questions
+// aren't near-duplicates of each other (they ask for different info —
+// e.g. "how long have you used it" vs "give an example project") — the
+// word-overlap check above is deliberately narrow so it never merges two
+// genuinely different questions, which is exactly why this one slips
+// through it.
+//
+// Rule enforced here: once a real question has been asked, if a
+// non-question sentence follows it (i.e. the model appears to have
+// moved on, as if it got a reply), stop the message right there — that
+// non-question sentence and everything after it is never shown to the
+// candidate. Two questions in a row with nothing but the allowed combo
+// pattern between them (name+email, skill+duration) are still permitted,
+// since the system prompt explicitly allows those pairs to share one
+// message and they don't have a fake-acknowledgment sentence wedged
+// between them.
+export function enforceSingleQuestion(text: string): string {
+  const parts = text.split(/(?<=[.?!])\s+(?=\S)|(?<=[.?!])(?=[A-Z])/);
+  const kept: string[] = [];
+  let questionCount = 0;
+  let sawStatementAfterQuestion = false;
+
+  for (const part of parts) {
+    const trimmed = part.trim();
+    if (!trimmed) continue;
+    const isQuestion = trimmed.endsWith("?");
+
+    // A statement has already shown up after at least one question was
+    // asked — that's the "Thanks for letting me know." tell. Anything
+    // from here on is the model faking a second turn. Stop for good.
+    if (sawStatementAfterQuestion) break;
+
+    // Already have two consecutive questions (the allowed combo). A
+    // third question — even with no fake-ack sentence between — is never
+    // legitimate under the one-question rule, so stop instead of
+    // appending it.
+    if (questionCount >= 2 && isQuestion) break;
+
+    kept.push(trimmed);
+
+    if (isQuestion) {
+      questionCount++;
+    } else if (questionCount >= 1) {
+      sawStatementAfterQuestion = true;
+    }
+  }
+
+  return kept.join(" ").trim();
+}
+
 async function callGroq(apiKey: string, model: string, messages: ChatMessage[], maxTokens: number): Promise<string> {
   const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
     method: "POST",
