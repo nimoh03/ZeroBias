@@ -28,18 +28,21 @@ function scoreBarColor(status: string) {
 export default async function CandidatesList({
   searchParams,
 }: {
-  searchParams: Promise<{ q?: string; status?: string }>;
+  searchParams: Promise<{ q?: string; status?: string; job?: string }>;
 }) {
-  const { q, status } = await searchParams;
+  const { q, status, job } = await searchParams;
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
 
+  // Fetching title too now (not just id) so we can show which job
+  // the list is filtered by, and offer a way to clear it.
   const { data: jobs } = await supabase
     .from('jobs')
-    .select('id')
+    .select('id, title')
     .eq('recruiter_id', user?.id);
 
   const jobIds = jobs?.map(j => j.id) || [];
+  const activeJob = job ? jobs?.find(j => j.id === job) : null;
 
   let candidates: any[] = [];
   if (jobIds.length > 0) {
@@ -51,6 +54,13 @@ export default async function CandidatesList({
 
     if (status && status !== 'all') {
       query = query.eq('status', status);
+    }
+
+    // Restrict to a single job when arriving from a job card click.
+    // Only applied if the job actually belongs to this recruiter
+    // (guards against a stale/tampered job id in the URL).
+    if (job && activeJob) {
+      query = query.eq('job_id', job);
     }
 
     const { data } = await query;
@@ -85,6 +95,18 @@ export default async function CandidatesList({
           <p className="text-sm text-on-surface-variant mt-1">Review and manage AI-screened applicants.</p>
         </div>
       </div>
+
+      {/* Active job filter chip — shown only when arriving from a job card click */}
+      {activeJob && (
+        <div className="flex items-center gap-2">
+          <span className="inline-flex items-center gap-2 px-3 py-1.5 bg-primary/10 text-primary rounded-full text-xs font-bold">
+            Filtered: {activeJob.title}
+            <Link href="/candidates" className="hover:opacity-70">
+              <XCircle size={14} />
+            </Link>
+          </span>
+        </div>
+      )}
 
       {/* Filters & Search */}
       <form method="GET" className="grid grid-cols-1 md:grid-cols-12 gap-4">

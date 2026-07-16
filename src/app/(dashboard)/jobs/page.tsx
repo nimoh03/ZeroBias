@@ -59,8 +59,16 @@ export default async function JobsPage() {
               key={job.id} 
               className="bg-white border border-slate-200 rounded-2xl p-5 md:p-6 shadow-sm hover:shadow-md transition-shadow flex flex-col md:flex-row md:items-center justify-between gap-6 group"
             >
-              {/* Job Info */}
-              <div className="flex items-start gap-4 md:gap-5">
+              {/* Job Info — wrapped in a Link so clicking the job jumps
+                  straight to its filtered candidate pipeline. Only this
+                  block is a link (not the whole card), since the Edit
+                  button and Copy Link button below need to stay
+                  independently clickable — nesting a link around them
+                  too would create invalid nested <a> tags. */}
+              <Link
+                href={`/candidates?job=${job.id}`}
+                className="flex items-start gap-4 md:gap-5"
+              >
                 <div className="w-12 h-12 rounded-xl bg-blue-50 flex items-center justify-center text-primary border border-blue-100 shrink-0">
                   <Briefcase size={22} strokeWidth={2.5} />
                 </div>
@@ -82,7 +90,7 @@ export default async function JobsPage() {
                     </span>
                   </div>
                 </div>
-              </div>
+              </Link>
 
               {/* Actions (Copy Link & Edit) */}
               <div className="flex items-center gap-2 w-full md:w-auto">
