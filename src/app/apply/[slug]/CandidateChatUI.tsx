@@ -261,11 +261,17 @@ export default function CandidateChatUI({ job }: { job: any }) {
                 disabled={isLoading}
                 rows={1}
                 placeholder={isLoading ? "..." : "Type your message..."}
-                className="w-full bg-slate-100 border border-transparent rounded-3xl pl-12 pr-14 py-3.5 text-[16px] leading-snug focus:bg-white focus:border-primary focus:ring-4 focus:ring-primary/10 outline-none transition-all disabled:opacity-50 resize-none overflow-y-auto max-h-[120px]"
+                // fontSize is pinned inline (not just via Tailwind) so it can
+                // never drop below 16px — iOS Safari auto-zooms the page on
+                // focus into any input/textarea under 16px. touch-action
+                // kills the extra double-tap-to-zoom delay on the button too.
+                style={{ fontSize: '16px', touchAction: 'manipulation' }}
+                className="w-full bg-slate-100 border border-transparent rounded-3xl pl-12 pr-14 py-3.5 leading-snug focus:bg-white focus:border-primary focus:ring-4 focus:ring-primary/10 outline-none transition-all disabled:opacity-50 resize-none overflow-y-auto max-h-[120px]"
               />
               <button
                 type="submit"
                 disabled={!inputText.trim() || isLoading}
+                style={{ touchAction: 'manipulation' }}
                 className="absolute right-1.5 bottom-1.5 w-9 h-9 bg-primary text-white rounded-full flex items-center justify-center hover:bg-blue-700 transition-colors disabled:opacity-40 disabled:bg-slate-300 shrink-0"
               >
                 <Send size={16} className="ml-0.5" />
