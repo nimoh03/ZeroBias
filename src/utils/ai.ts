@@ -45,6 +45,20 @@ export function stripThinkTags(text: string): string {
   return text.replace(/<think>[\s\S]*?<\/think>/gi, "").trim();
 }
 
+// Defense against a Groq-specific leak: gpt-oss models internally format
+// their output using OpenAI's "harmony" response format, which wraps
+// content in tokens like <|start|>, <|channel|>, <|message|>, <|end|>.
+// The chat completions endpoint is supposed to already strip these and
+// return clean text in the content field, but on occasion — usually
+// when the model's own generation goes slightly off-script — a raw
+// token slips through into what we get back. A candidate should never
+// see something like "###END<|message|>Got it, thanks." Strip any of
+// these tokens outright; they never carry meaning for a candidate
+// either way.
+export function stripHarmonyTokens(text: string): string {
+  return text.replace(/<\|[a-z_]+\|>/gi, "").trim();
+}
+
 // Common filler/connector words stripped before comparing questions for
 // near-duplicates. Deliberately small — this only needs to strip enough
 // scaffolding ("could you tell me", "let me know", "do you have") that
@@ -206,7 +220,7 @@ async function callGroq(apiKey: string, model: string, messages: ChatMessage[], 
   const data = await response.json();
   const text = data?.choices?.[0]?.message?.content;
   if (!text) throw new Error(`Groq/${model} returned no content`);
-  return stripThinkTags(text);
+  return stripHarmonyTokens(stripThinkTags(text));
 }
 
 async function callGemini(apiKey: string, model: string, messages: ChatMessage[], maxTokens: number): Promise<string> {

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
-import { Send, User, Loader2, Plus, CheckCircle2, Clock, FileText } from "lucide-react";
+import { Send, User, Loader2, Plus, FileText } from "lucide-react";
 
 const STORAGE_KEY_PREFIX = "hireflow_chat_";
 
@@ -131,7 +131,10 @@ export default function CandidateChatUI({ job }: { job: any }) {
     }
   };
 
-  const finalActionIsLink = typeof job.final_action === 'string' && /^https?:\/\//i.test(job.final_action.trim());
+  // Note: job.final_action (a recruiter-set custom redirect link/message for
+  // qualified candidates) is no longer surfaced here now that the banner is
+  // gone. If you still want that link shown somewhere, it needs a new home —
+  // flag it and we can add it back in.
 
   return (
     <div
@@ -189,45 +192,30 @@ export default function CandidateChatUI({ job }: { job: any }) {
       {/* Input Area — normal flex flow, not absolute, so mobile keyboards don't break it */}
       <div className="shrink-0 bg-white border-t border-slate-100 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] px-4">
         {isDone ? (
-          <div className="text-center bg-slate-50 border border-slate-200 rounded-2xl py-5 px-6">
-            {finalStatus === 'qualified' ? (
-              <>
-                <CheckCircle2 className="mx-auto text-emerald-500 mb-2" size={26} />
-                <p className="text-sm font-bold text-slate-900">You're through to the next stage</p>
-                {job.final_action ? (
-                  finalActionIsLink ? (
-                    <a
-                      href={job.final_action.trim()}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="inline-block mt-4 px-6 py-3 bg-primary text-white rounded-full text-sm font-bold shadow-sm hover:bg-blue-700 transition-colors"
-                    >
-                      Continue →
-                    </a>
-                  ) : (
-                    <p className="text-xs text-slate-600 mt-2 whitespace-pre-wrap">{job.final_action}</p>
-                  )
-                ) : (
-                  <p className="text-xs text-slate-500 mt-1">The team will be in touch with next steps shortly.</p>
-                )}
-              </>
-            ) : finalStatus === 'needs_review' ? (
-              <>
-                <Clock className="mx-auto text-orange-500 mb-2" size={26} />
-                <p className="text-sm font-bold text-slate-900">Thanks — we'll be in touch soon</p>
-                <p className="text-xs text-slate-500 mt-1">A member of the team is reviewing your answers.</p>
-              </>
-            ) : (
-              // Nova's own closing message (already shown as the last chat
-              // bubble above) already tells the candidate their answers will
-              // be reviewed — repeating that sentence in a banner under it
-              // was redundant. Just a quiet visual "this is done" cue now.
-              <div className="flex items-center justify-center gap-2 text-slate-400">
-                <CheckCircle2 size={16} />
-                <p className="text-xs font-semibold">Response recorded</p>
-              </div>
-            )}
-          </div>
+          <form className="relative flex items-end">
+            <button
+              type="button"
+              disabled
+              className="absolute left-1.5 bottom-1.5 w-9 h-9 flex items-center justify-center rounded-full text-slate-300 shrink-0"
+            >
+              <Plus size={20} />
+            </button>
+            <textarea
+              disabled
+              rows={1}
+              value=""
+              placeholder="This screening has been completed"
+              style={{ fontSize: '16px' }}
+              className="w-full bg-slate-100 border border-transparent rounded-3xl pl-12 pr-14 py-3.5 leading-snug outline-none resize-none opacity-60 cursor-not-allowed"
+            />
+            <button
+              type="button"
+              disabled
+              className="absolute right-1.5 bottom-1.5 w-9 h-9 bg-slate-300 text-white rounded-full flex items-center justify-center shrink-0"
+            >
+              <Send size={16} className="ml-0.5" />
+            </button>
+          </form>
         ) : (
           <>
             <form onSubmit={handleSend} className="relative flex items-end">
