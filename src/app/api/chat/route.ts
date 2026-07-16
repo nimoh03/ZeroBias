@@ -139,7 +139,13 @@ Include this block on every turn from the moment you first learn either value, s
       ...messages,
     ];
 
-    const { text: rawText } = await getAIReply({ groqKey, geminiKey, messages: apiMessages, maxTokens: 500 });
+    // 500 wasn't enough room for a closing message PLUS a full
+    // ###DECISION### block (summary + strengths[] + concerns[]) — the
+    // model would run out of tokens mid-JSON, which meant the decision
+    // could never be parsed AND the truncated raw JSON leaked straight
+    // into the candidate-facing message (see failsafe #3 below for the
+    // belt-and-suspenders fix on top of this).
+    const { text: rawText } = await getAIReply({ groqKey, geminiKey, messages: apiMessages, maxTokens: 900 });
 
     // Small/free-tier models occasionally loop on themselves and repeat
     // a sentence or question 2-3 times in one reply — collapse those
@@ -188,6 +194,26 @@ Include this block on every turn from the moment you first learn either value, s
       }
     }
 
+    // Failsafe #3: the JSON was cut off mid-generation (ran out of
+    // tokens before the closing brace) so neither of the two matches
+    // above could fire — they both require a clean closing "}". Without
+    // this, a truncated blob like {"status":"qualified","score":85,
+    // "candidate_email":"um  leaks straight to the candidate raw, and
+    // decision stays null forever so the candidate's status/score never
+    // update either. Detect the opening shape regardless of whether it
+    // closed, and cut everything from that point on. Deliberately does
+    // NOT try to parse a decision out of this — a truncated object is
+    // missing fields — it just keeps it off the candidate's screen and
+    // leaves decision null so the screening continues; the model gets
+    // another turn to actually finish the block properly next message.
+    if (!decision) {
+      const truncatedJsonMatch = aiResponseText.match(/\{\s*"(status|name)"\s*:[\s\S]*$/);
+      if (truncatedJsonMatch) {
+        console.error("⚠️ TRUNCATED/UNPARSEABLE JSON STRIPPED FROM CANDIDATE VIEW:", truncatedJsonMatch[0]);
+        aiResponseText = aiResponseText.slice(0, truncatedJsonMatch.index).trim();
+      }
+    }
+
     const profileMatch = aiResponseText.match(/###PROFILE###([\s\S]*?)###END###/);
     if (profileMatch) {
       try {
@@ -227,6 +253,12 @@ Include this block on every turn from the moment you first learn either value, s
         })
         .eq("id", candidateId);
       if (error) console.error("🔥 COULD NOT SAVE DECISION:", error.message);
+    }
+
+    // Edge case: if the entire reply was the truncated JSON (nothing
+    // else survived stripping), don't send an empty bubble.
+    if (!aiResponseText) {
+      aiResponseText = "Thanks — give me one moment.";
     }
 
     // 6. Save the assistant's reply (candidate-facing text only).

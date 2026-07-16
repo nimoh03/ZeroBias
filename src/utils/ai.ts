@@ -40,15 +40,28 @@ export function stripThinkTags(text: string): string {
 // Conservative on purpose — only catches exact-ish repeats, never
 // touches genuinely different sentences even if topically similar.
 export function dedupeRepeatedSentences(text: string): string {
-  const parts = text.split(/(?<=[.?!])\s+/);
+  // Split on sentence-ending punctuation followed by EITHER whitespace
+  // (the normal case) OR directly by a capital letter with no space at
+  // all — small free-tier models occasionally loop/repeat a clause mid-
+  // generation and jam the repeat straight onto the previous sentence
+  // with no separating space ("...one project?Got it. If so...").
+  // Without the second branch, that boundary is invisible to the
+  // splitter and the repeat sails through undetected. The lookahead
+  // keeps the delimiter attached to the following part.
+  const parts = text.split(/(?<=[.?!])\s+(?=\S)|(?<=[.?!])(?=[A-Z])/);
   const seen = new Set<string>();
   const kept: string[] = [];
   for (const part of parts) {
-    const normalized = part.trim().toLowerCase().replace(/[^a-z0-9]/g, "");
+    const trimmed = part.trim();
+    if (!trimmed) continue;
+    const normalized = trimmed.toLowerCase().replace(/[^a-z0-9]/g, "");
     if (normalized.length > 8 && seen.has(normalized)) continue;
     if (normalized.length > 8) seen.add(normalized);
-    kept.push(part);
+    kept.push(trimmed);
   }
+  // Always join with a real space — this also repairs any jammed
+  // "project?Got" boundaries that survive because they weren't exact
+  // repeats, so the candidate never sees punctuation-glued text.
   return kept.join(" ").trim();
 }
 
