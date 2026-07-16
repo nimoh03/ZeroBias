@@ -19,6 +19,21 @@ export default async function JobsPage() {
 
   const hasJobs = jobs && jobs.length > 0;
 
+  // Candidate counts per job. Fetched separately (rather than a nested
+  // select) so a single count query covers every job in one round trip.
+  const candidateCounts: Record<string, number> = {};
+  if (hasJobs) {
+    const { data: candidateRows } = await supabase
+      .from('candidates')
+      .select('job_id')
+      .in('job_id', jobs.map((j) => j.id));
+
+    for (const row of candidateRows ?? []) {
+      if (!row.job_id) continue;
+      candidateCounts[row.job_id] = (candidateCounts[row.job_id] ?? 0) + 1;
+    }
+  }
+
   return (
     <div className="p-6 md:p-10 max-w-[1280px] mx-auto animate-in fade-in duration-500">
       
@@ -63,7 +78,7 @@ export default async function JobsPage() {
                     </span>
                     <span className="w-1 h-1 bg-slate-300 rounded-full"></span>
                     <span className="text-xs font-bold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-md flex items-center gap-1">
-                      <Users size={12} /> 0 Candidates
+                      <Users size={12} /> {candidateCounts[job.id] ?? 0} Candidates
                     </span>
                   </div>
                 </div>

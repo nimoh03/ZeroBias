@@ -1,10 +1,14 @@
 // Centralized AI calling with automatic failover.
 //
-// Order: try every Groq model in GROQ_MODELS, in order. If Groq is
-// completely unavailable (no key, or every model fails — rate limited,
-// down, etc.), silently fall through to Gemini and try every model in
-// GEMINI_MODELS. The caller never needs to know which one actually
-// answered — candidates and recruiters never see a provider hiccup.
+// Order: try every Gemini model in GEMINI_MODELS first, in order. Gemini
+// is the primary provider for candidate-facing screening — it doesn't
+// have the reasoning-leak behavior Groq's small/preview models do, and
+// is more consistent at following the strict one-question-per-message /
+// JSON-block instructions in the system prompt. If Gemini is completely
+// unavailable (no key, or every model fails — rate limited, down, etc.),
+// silently fall through to Groq and try every model in GROQ_MODELS. The
+// caller never needs to know which one actually answered — candidates
+// and recruiters never see a provider hiccup.
 //
 // Model lists deliberately kept short and current. Free-tier catalogs on
 // both providers churn every few months — if requests start failing here,
@@ -13,8 +17,40 @@
 
 export type ChatMessage = { role: "system" | "user" | "assistant"; content: string };
 
-const GROQ_MODELS = ["openai/gpt-oss-20b", "openai/gpt-oss-120b", "qwen/qwen3.6-27b"];
+// qwen/qwen3.6-27b deliberately left out of the fallback list: it's a
+// preview/vision model, not meant for production text screening, and it
+// was the source of raw <think> reasoning tokens leaking into candidate
+// messages. gpt-oss models stay as the Groq fallback with reasoning
+// explicitly suppressed below.
+const GROQ_MODELS = ["openai/gpt-oss-20b", "openai/gpt-oss-120b"];
 const GEMINI_MODELS = ["gemini-flash-latest", "gemini-2.5-flash"];
+
+// Defense in depth: even with reasoning suppressed via API params, strip
+// any <think>...</think> block that slips through before it ever reaches
+// a candidate. Same philosophy as the ###DECISION### stripping in the
+// chat route — never trust a model to honor a param 100% of the time.
+export function stripThinkTags(text: string): string {
+  return text.replace(/<think>[\s\S]*?<\/think>/gi, "").trim();
+}
+
+// Defense against small/free-tier models looping on themselves mid-
+// generation and sending the same question 2-3 times in one reply
+// (seen from gpt-oss-20b). Splits on sentence-ending punctuation and
+// drops any sentence that's a near-duplicate of one already kept.
+// Conservative on purpose — only catches exact-ish repeats, never
+// touches genuinely different sentences even if topically similar.
+export function dedupeRepeatedSentences(text: string): string {
+  const parts = text.split(/(?<=[.?!])\s+/);
+  const seen = new Set<string>();
+  const kept: string[] = [];
+  for (const part of parts) {
+    const normalized = part.trim().toLowerCase().replace(/[^a-z0-9]/g, "");
+    if (normalized.length > 8 && seen.has(normalized)) continue;
+    if (normalized.length > 8) seen.add(normalized);
+    kept.push(part);
+  }
+  return kept.join(" ").trim();
+}
 
 async function callGroq(apiKey: string, model: string, messages: ChatMessage[], maxTokens: number): Promise<string> {
   const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
@@ -28,6 +64,10 @@ async function callGroq(apiKey: string, model: string, messages: ChatMessage[], 
       messages,
       temperature: 0.6,
       max_completion_tokens: maxTokens,
+      // gpt-oss models don't support reasoning_format, but do support
+      // include_reasoning — keep reasoning tokens out of the main content
+      // field entirely rather than trusting a <think>-tag convention.
+      include_reasoning: false,
     }),
   });
 
@@ -39,7 +79,7 @@ async function callGroq(apiKey: string, model: string, messages: ChatMessage[], 
   const data = await response.json();
   const text = data?.choices?.[0]?.message?.content;
   if (!text) throw new Error(`Groq/${model} returned no content`);
-  return text;
+  return stripThinkTags(text);
 }
 
 async function callGemini(apiKey: string, model: string, messages: ChatMessage[], maxTokens: number): Promise<string> {
@@ -74,7 +114,7 @@ async function callGemini(apiKey: string, model: string, messages: ChatMessage[]
   const data = await response.json();
   const text = data?.candidates?.[0]?.content?.parts?.map((p: any) => p.text).join("");
   if (!text) throw new Error(`Gemini/${model} returned no content`);
-  return text;
+  return stripThinkTags(text);
 }
 
 // Status codes worth a second try — rate limits and transient server-side
@@ -100,22 +140,22 @@ async function attemptAllProviders({
 }): Promise<{ text: string; provider: string; model: string } | { errors: string[] }> {
   const errors: string[] = [];
 
-  if (groqKey) {
-    for (const model of GROQ_MODELS) {
+  if (geminiKey) {
+    for (const model of GEMINI_MODELS) {
       try {
-        const text = await callGroq(groqKey, model, messages, maxTokens);
-        return { text, provider: "groq", model };
+        const text = await callGemini(geminiKey, model, messages, maxTokens);
+        return { text, provider: "gemini", model };
       } catch (err: any) {
         errors.push(err.message || String(err));
       }
     }
   }
 
-  if (geminiKey) {
-    for (const model of GEMINI_MODELS) {
+  if (groqKey) {
+    for (const model of GROQ_MODELS) {
       try {
-        const text = await callGemini(geminiKey, model, messages, maxTokens);
-        return { text, provider: "gemini", model };
+        const text = await callGroq(groqKey, model, messages, maxTokens);
+        return { text, provider: "groq", model };
       } catch (err: any) {
         errors.push(err.message || String(err));
       }
