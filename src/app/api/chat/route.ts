@@ -248,10 +248,38 @@ Include this block on every turn from the moment you first learn either value, s
     }
     aiResponseText = aiResponseText.replace(/###PROFILE###[\s\S]*?###END###/g, "").trim();
 
+    // Failsafe: same class of bug as the bare/truncated DECISION handling
+    // above, but for PROFILE — the model sometimes drops the opening
+    // "###PROFILE###" tag entirely and just writes the raw
+    // {"name":...,"email":...} object, often followed by a mangled
+    // "###END" (missing its own trailing ###, so the generic marker
+    // strip below never matches it either). Without this, that JSON
+    // blob — and the stray "###END" — leak straight into what the
+    // candidate sees. Only treat it as a profile object (not some other
+    // JSON) when it has both expected keys.
+    if (!profileUpdate) {
+      const bareProfileMatch = aiResponseText.match(/\{\s*"name"\s*:[\s\S]*?"email"\s*:[\s\S]*?\}/);
+      if (bareProfileMatch) {
+        try {
+          const parsed = JSON.parse(bareProfileMatch[0]);
+          if ("name" in parsed && "email" in parsed) {
+            profileUpdate = parsed;
+            aiResponseText = aiResponseText.replace(bareProfileMatch[0], "").trim();
+          }
+        } catch (err) {
+          console.error("🔥 COULD NOT PARSE BARE PROFILE JSON:", bareProfileMatch[0], err);
+        }
+      }
+    }
+
     // Failsafe: whatever's left, if any stray ### marker survived (a
-    // malformed/unterminated block, a model quirk we haven't seen yet),
-    // strip it rather than ever show raw protocol syntax to a candidate.
-    aiResponseText = aiResponseText.replace(/###[A-Z_]+###/g, "").replace(/\s{3,}/g, " ").trim();
+    // malformed/unterminated block — e.g. "###END" missing its own
+    // trailing ###, or an opening tag with no matching close — a model
+    // quirk we haven't seen yet), strip it rather than ever show raw
+    // protocol syntax to a candidate. Restricted to the three known
+    // marker names (not a generic [A-Z_]+) so it can't accidentally eat
+    // the leading capital letter of the very next word.
+    aiResponseText = aiResponseText.replace(/###(?:DECISION|PROFILE|END)(?:###)?/g, "").replace(/\s{3,}/g, " ").trim();
 
     // Failsafe: models occasionally skip the ###PROFILE### block entirely
     // even when told to include it every turn (long system prompts are
