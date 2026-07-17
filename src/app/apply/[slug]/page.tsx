@@ -2,9 +2,16 @@ import { createClient } from "@/utils/supabase/server";
 import { notFound } from "next/navigation";
 import CandidateChatUI from "./CandidateChatUI";
 
-export default async function CandidateApplyPage({ params }: { params: Promise<{ slug: string }> }) {
+export default async function CandidateApplyPage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ slug: string }>;
+  searchParams: Promise<{ src?: string }>;
+}) {
   // 1. Await params to prevent Next.js routing crashes
   const resolvedParams = await params;
+  const resolvedSearchParams = await searchParams;
   const supabase = await createClient();
 
   // 2. Query the database using 'public_slug' specifically
@@ -26,5 +33,5 @@ export default async function CandidateApplyPage({ params }: { params: Promise<{
   }
 
   // 5. If everything passes, load Nova!
-  return <CandidateChatUI job={job} />;
+  return <CandidateChatUI job={job} source={resolvedSearchParams.src || "direct"} />;
 }

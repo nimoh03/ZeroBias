@@ -5,7 +5,7 @@ import { Send, User, Loader2, Plus, FileText } from "lucide-react";
 
 const STORAGE_KEY_PREFIX = "hireflow_chat_";
 
-export default function CandidateChatUI({ job }: { job: any }) {
+export default function CandidateChatUI({ job, source }: { job: any; source?: string }) {
   const [inputText, setInputText] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [candidateId, setCandidateId] = useState<string | null>(null);
@@ -78,6 +78,7 @@ export default function CandidateChatUI({ job }: { job: any }) {
           messages: newMessages,
           jobContext: job,
           candidateId,
+          source,
         }),
       });
 

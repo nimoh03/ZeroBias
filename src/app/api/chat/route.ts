@@ -5,7 +5,7 @@ export const maxDuration = 45;
 
 export async function POST(req: Request) {
   try {
-    const { messages, jobContext, candidateId: incomingCandidateId } = await req.json();
+   const { messages, jobContext, candidateId: incomingCandidateId, source } = await req.json();
     const supabase = createAdminClient();
 
     // 1. Make sure a candidate record exists for this conversation.
@@ -14,7 +14,7 @@ export async function POST(req: Request) {
     if (!candidateId) {
       const { data: candidate, error: candidateError } = await supabase
         .from("candidates")
-        .insert({ job_id: jobContext.id, status: "screening" })
+       .insert({ job_id: jobContext.id, status: "screening", source: source || "direct" })
         .select("id")
         .single();
 
