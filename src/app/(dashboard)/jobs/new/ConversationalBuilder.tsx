@@ -83,8 +83,8 @@ export default function ConversationalBuilder() {
     }
   };
 
-  const toggleExcusable = (index: number) => {
-    setRequirements(prev => prev.map((r, i) => i === index ? { ...r, excusable: !r.excusable } : r));
+  const setRequirementExcusable = (index: number, excusable: boolean) => {
+    setRequirements(prev => prev.map((r, i) => i === index ? { ...r, excusable } : r));
   };
 
   const requireEverything = () => {
@@ -237,20 +237,25 @@ export default function ConversationalBuilder() {
 
           <div className="space-y-2">
             {requirements.map((req, i) => (
-              <label key={i} className={`flex items-start gap-3 p-4 rounded-xl border-2 cursor-pointer transition-all ${req.excusable ? "border-blue-200 bg-blue-50" : "border-slate-200 bg-slate-50"}`}>
-                <input
-                  type="checkbox"
-                  checked={req.excusable}
-                  onChange={() => toggleExcusable(i)}
-                  className="mt-0.5 w-4 h-4 accent-primary shrink-0"
-                />
-                <div className="flex-1">
-                  <p className="text-sm font-medium text-slate-900">{req.text}</p>
-                  <span className={`text-[10px] font-bold uppercase tracking-wider ${req.excusable ? "text-primary" : "text-red-500"}`}>
-                    {req.excusable ? "Can be missing (nice-to-have)" : "Must have"}
-                  </span>
+              <div key={i} className={`flex items-center gap-3 p-4 rounded-xl border-2 transition-all ${req.excusable ? "border-blue-200 bg-blue-50" : "border-slate-200 bg-slate-50"}`}>
+                <p className="flex-1 text-sm font-medium text-slate-900">{req.text}</p>
+                <div className="inline-flex items-center gap-1 bg-white p-1 rounded-full border border-slate-200 shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => setRequirementExcusable(i, false)}
+                    className={`px-3 py-1.5 rounded-full text-[11px] font-bold uppercase tracking-wider transition-all ${!req.excusable ? "bg-red-500 text-white" : "text-slate-400 hover:text-red-500"}`}
+                  >
+                    Must have
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setRequirementExcusable(i, true)}
+                    className={`px-3 py-1.5 rounded-full text-[11px] font-bold uppercase tracking-wider transition-all ${req.excusable ? "bg-primary text-white" : "text-slate-400 hover:text-primary"}`}
+                  >
+                    Nice to have
+                  </button>
                 </div>
-              </label>
+              </div>
             ))}
           </div>
 

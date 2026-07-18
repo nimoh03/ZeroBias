@@ -2,7 +2,7 @@
 
 import { useState, useTransition, KeyboardEvent } from "react";
 import Link from "next/link";
-import { ArrowLeft, Briefcase, Target, CheckCircle2, Loader2, X, FileText, Trash2, Calendar, AlertTriangle, PauseCircle, PlayCircle } from "lucide-react";
+import { ArrowLeft, Briefcase, Target, CheckCircle2, Loader2, X, FileText, Trash2, Calendar, AlertTriangle, PauseCircle, PlayCircle, ChevronDown, Gauge, ShieldCheck, ShieldQuestion } from "lucide-react";
 import { updateJobAction, deleteJobAction, setJobStatusAction } from "./action";
 import InterviewSlotsEditor, { type SlotRow } from "@/components/InterviewSlotsEditor";
 
@@ -205,12 +205,15 @@ export default function EditJobForm({
 
           <div className="space-y-2 mb-5 md:mb-6">
             <label className="text-sm font-bold text-slate-700">Employment Type</label>
-            <select name="jobType" value={formData.jobType} onChange={handleChange} className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3.5 text-sm focus:bg-white focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all appearance-none cursor-pointer">
-              <option>Full-time</option>
-              <option>Contract</option>
-              <option>Part-time</option>
-              <option>Internship</option>
-            </select>
+            <div className="relative">
+              <select name="jobType" value={formData.jobType} onChange={handleChange} className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3.5 text-sm focus:bg-white focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all appearance-none cursor-pointer pr-10">
+                <option>Full-time</option>
+                <option>Contract</option>
+                <option>Part-time</option>
+                <option>Internship</option>
+              </select>
+              <ChevronDown size={16} className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-slate-400" />
+            </div>
           </div>
 
           <div className="space-y-2">
@@ -317,12 +320,41 @@ export default function EditJobForm({
               <div className="bg-slate-100 p-2 rounded-lg text-slate-600 shrink-0"><FileText size={18} /></div>
               <div>
                 <p className="text-sm font-bold text-slate-900">Ask for a CV during screening</p>
+                <p className="text-xs text-slate-500 mt-1">If enabled, Nova will ask candidates to upload or paste their CV before or during the chat, and can reference it while screening.</p>
               </div>
             </div>
-            <label className="relative inline-flex items-center cursor-pointer shrink-0">
+            <label className="relative inline-flex items-center cursor-pointer shrink-0 mt-1">
               <input type="checkbox" className="sr-only peer" checked={requestCv} onChange={() => setRequestCv(!requestCv)} />
               <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary"></div>
             </label>
+          </div>
+
+          <div className="mt-6 pt-6 border-t border-slate-100 space-y-3">
+            <div className="flex gap-3 items-start">
+              <div className="bg-slate-100 p-2 rounded-lg text-slate-600 shrink-0"><Gauge size={18} /></div>
+              <div>
+                <p className="text-sm font-bold text-slate-900">Screening Rigor</p>
+                <p className="text-xs text-slate-500 mt-1">How strictly should Nova interpret what a candidate tells you?</p>
+              </div>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <label className={`flex items-start gap-3 p-4 rounded-xl border-2 cursor-pointer transition-all ${screeningRigor === 'thorough' ? 'border-primary bg-blue-50' : 'border-slate-200 bg-slate-50 hover:border-slate-300'}`}>
+                <input type="radio" className="sr-only" checked={screeningRigor === 'thorough'} onChange={() => setScreeningRigor('thorough')} />
+                <ShieldCheck size={18} className={screeningRigor === 'thorough' ? 'text-primary shrink-0 mt-0.5' : 'text-slate-400 shrink-0 mt-0.5'} />
+                <div>
+                  <p className="text-sm font-bold text-slate-900">Thorough</p>
+                  <p className="text-xs text-slate-500 mt-0.5">Nova probes and verifies claims, and is stricter about vague or unsupported answers.</p>
+                </div>
+              </label>
+              <label className={`flex items-start gap-3 p-4 rounded-xl border-2 cursor-pointer transition-all ${screeningRigor === 'trusting' ? 'border-primary bg-blue-50' : 'border-slate-200 bg-slate-50 hover:border-slate-300'}`}>
+                <input type="radio" className="sr-only" checked={screeningRigor === 'trusting'} onChange={() => setScreeningRigor('trusting')} />
+                <ShieldQuestion size={18} className={screeningRigor === 'trusting' ? 'text-primary shrink-0 mt-0.5' : 'text-slate-400 shrink-0 mt-0.5'} />
+                <div>
+                  <p className="text-sm font-bold text-slate-900">Trusting</p>
+                  <p className="text-xs text-slate-500 mt-0.5">Nova takes candidates at their word and moves faster, with lighter follow-up questions.</p>
+                </div>
+              </label>
+            </div>
           </div>
 
         </div>

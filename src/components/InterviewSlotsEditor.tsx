@@ -41,7 +41,7 @@ function formatDisplay(value: string) {
 }
 
 /**
- * A self-contained, dependency-free date + time picker styled to match the
+ * A date + time picker built on react-day-picker, styled to match the
  * antd design language: a floating rounded card, a month grid with a
  * circular primary-colored selection, and scrollable hour/minute columns.
  */
@@ -206,9 +206,10 @@ function DateTimePicker({
 
 /**
  * "Schedule" — lets a recruiter offer one or more real interview times,
- * all sharing one meeting link. Nova hands this list to each qualified
- * candidate and they pick whichever works for them. Reports a normalized
- * list of {time, link} back to the parent on every change via onChange.
+ * all sharing one meeting link by default (toggleable), or each with its
+ * own. Nova hands this list to each qualified candidate and they pick
+ * whichever works for them. Reports a normalized list of {time, link}
+ * back to the parent on every change via onChange.
  */
 export default function InterviewSlotsEditor({
   initialSlots = [],
@@ -217,19 +218,22 @@ export default function InterviewSlotsEditor({
   initialSlots?: SlotRow[];
   onChange: (slots: SlotRow[]) => void;
 }) {
-  const [rows, setRows] = useState<{ time: string }[]>(
+  const [rows, setRows] = useState<SlotRow[]>(
     initialSlots.length > 0
-      ? initialSlots.map(s => ({ time: toLocalInputValue(s.time) }))
-      : [{ time: "" }]
+      ? initialSlots.map(s => ({ time: toLocalInputValue(s.time), link: s.link }))
+      : [{ time: "", link: "" }]
   );
-  const [link, setLink] = useState(initialSlots[0]?.link || "");
+  const [sameLink, setSameLink] = useState(true);
+  const [sharedLink, setSharedLink] = useState(initialSlots[0]?.link || "");
 
   const didMount = useRef(false);
 
-  const addRow = () => setRows(r => [...r, { time: "" }]);
+  const addRow = () => setRows(r => [...r, { time: "", link: sameLink ? sharedLink : "" }]);
   const removeRow = (idx: number) => setRows(r => r.filter((_, i) => i !== idx));
-  const updateRow = (idx: number, value: string) =>
-    setRows(r => r.map((row, i) => (i === idx ? { time: value } : row)));
+  const updateTime = (idx: number, value: string) =>
+    setRows(r => r.map((row, i) => (i === idx ? { ...row, time: value } : row)));
+  const updateLink = (idx: number, value: string) =>
+    setRows(r => r.map((row, i) => (i === idx ? { ...row, link: value } : row)));
 
   useEffect(() => {
     if (!didMount.current) {
@@ -237,30 +241,51 @@ export default function InterviewSlotsEditor({
       return;
     }
     const normalized = rows
-      .filter(r => r.time && link.trim())
-      .map(r => ({ time: r.time, link: link.trim() }));
+      .filter(r => r.time && (sameLink ? sharedLink.trim() : r.link.trim()))
+      .map(r => ({ time: r.time, link: (sameLink ? sharedLink : r.link).trim() }));
     onChange(normalized);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [rows, link]);
+  }, [rows, sameLink, sharedLink]);
 
   return (
     <div className="space-y-3">
-      <div className="flex items-center gap-2">
-        <Link2 size={14} className="text-slate-400 shrink-0" />
+      <label className="flex items-center gap-2 text-xs font-medium text-slate-600 cursor-pointer">
         <input
-          type="url"
-          placeholder="Meeting link — https://meet.google.com/... or Zoom/Calendly"
-          value={link}
-          onChange={(e) => setLink(e.target.value)}
-          className="w-full text-sm px-3 py-2.5 rounded-lg border border-slate-200 bg-white focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all"
+          type="checkbox"
+          checked={sameLink}
+          onChange={(e) => setSameLink(e.target.checked)}
+          className="accent-primary"
         />
-      </div>
+        Use the same meeting link for every time
+      </label>
+
+      {sameLink && (
+        <div className="flex items-center gap-2">
+          <Link2 size={14} className="text-slate-400 shrink-0" />
+          <input
+            type="url"
+            placeholder="Meeting link — https://meet.google.com/... or Zoom/Calendly"
+            value={sharedLink}
+            onChange={(e) => setSharedLink(e.target.value)}
+            className="w-full text-sm px-3 py-2.5 rounded-lg border border-slate-200 bg-white focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all"
+          />
+        </div>
+      )}
 
       <div className="space-y-2">
         {rows.map((row, idx) => (
           <div key={idx} className="flex items-center gap-2">
             <Clock size={14} className="text-slate-300 shrink-0 hidden sm:block" />
-            <DateTimePicker value={row.time} onChange={(v) => updateRow(idx, v)} />
+            <DateTimePicker value={row.time} onChange={(v) => updateTime(idx, v)} />
+            {!sameLink && (
+              <input
+                type="url"
+                placeholder="Meeting link for this time"
+                value={row.link}
+                onChange={(e) => updateLink(idx, e.target.value)}
+                className="flex-1 text-sm px-3 py-2.5 rounded-lg border border-slate-200 bg-white focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all"
+              />
+            )}
             {rows.length > 1 && (
               <button type="button" onClick={() => removeRow(idx)} className="text-slate-400 hover:text-red-500 shrink-0 transition-colors">
                 <Trash2 size={16} />
