@@ -14,6 +14,9 @@ export default function CandidateChatUI({ job, source }: { job: any; source?: st
   const [finalStatus, setFinalStatus] = useState<"qualified" | "rejected" | "needs_review" | null>(null);
   const [cvFileName, setCvFileName] = useState<string | null>(null);
   const [isUploading, setIsUploading] = useState(false);
+  const [interviewSlots, setInterviewSlots] = useState<{ id: string; time: string; link: string }[]>([]);
+  const [selectedSlot, setSelectedSlot] = useState<{ id: string; time: string; link: string } | null>(null);
+  const [isBooking, setIsBooking] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -37,6 +40,8 @@ export default function CandidateChatUI({ job, source }: { job: any; source?: st
         if (parsed.isDone) setIsDone(parsed.isDone);
         if (parsed.finalStatus) setFinalStatus(parsed.finalStatus);
         if (parsed.cvFileName) setCvFileName(parsed.cvFileName);
+        if (parsed.interviewSlots) setInterviewSlots(parsed.interviewSlots);
+        if (parsed.selectedSlot) setSelectedSlot(parsed.selectedSlot);
       }
     } catch (error) {
       console.error("Could not restore saved conversation:", error);
@@ -49,15 +54,67 @@ export default function CandidateChatUI({ job, source }: { job: any; source?: st
   useEffect(() => {
     if (!hydrated) return;
     try {
-      localStorage.setItem(storageKey, JSON.stringify({ messages, candidateId, isDone, finalStatus, cvFileName }));
+      localStorage.setItem(storageKey, JSON.stringify({ messages, candidateId, isDone, finalStatus, cvFileName, interviewSlots, selectedSlot }));
     } catch (error) {
       console.error("Could not save conversation:", error);
     }
-  }, [messages, candidateId, isDone, finalStatus, cvFileName, hydrated, storageKey]);
+  }, [messages, candidateId, isDone, finalStatus, cvFileName, interviewSlots, selectedSlot, hydrated, storageKey]);
 
   useEffect(() => {
     scrollRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
-  }, [messages, isLoading]);
+  }, [messages, isLoading, interviewSlots, selectedSlot]);
+
+  // Once the screening chat is done, the recruiter may schedule an
+  // interview at any point afterward (they're reviewing async, not live).
+  // Poll cheaply for that rather than requiring the candidate to guess
+  // when to refresh. Pure DB reads — no AI calls involved. Stops once a
+  // slot has been picked (nothing left to wait for).
+  useEffect(() => {
+    if (!hydrated || !isDone || !candidateId || selectedSlot) return;
+
+    let cancelled = false;
+    const check = async () => {
+      try {
+        const res = await fetch(`/api/interview-slot?candidateId=${candidateId}`);
+        if (!res.ok || cancelled) return;
+        const data = await res.json();
+        if (cancelled) return;
+        if (data.selectedSlot) setSelectedSlot(data.selectedSlot);
+        else if (data.interviewSlots?.length) setInterviewSlots(data.interviewSlots);
+      } catch {
+        // Silent — this is a background convenience poll, not a critical path.
+      }
+    };
+
+    check();
+    const interval = setInterval(check, 20000);
+    return () => { cancelled = true; clearInterval(interval); };
+  }, [hydrated, isDone, candidateId, selectedSlot]);
+
+  const handlePickSlot = async (slotId: string) => {
+    if (!candidateId || isBooking) return;
+    setIsBooking(true);
+    try {
+      const res = await fetch('/api/interview-slot', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ candidateId, slotId }),
+      });
+      const data = await res.json();
+      if (res.ok && data.selectedSlot) {
+        setSelectedSlot(data.selectedSlot);
+      } else if (data.error) {
+        alert(data.error);
+      }
+    } catch {
+      alert("Couldn't save your selection — please try again.");
+    } finally {
+      setIsBooking(false);
+    }
+  };
+
+  const formatSlotTime = (iso: string) =>
+    new Date(iso).toLocaleString(undefined, { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
 
   const handleSend = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -192,6 +249,58 @@ export default function CandidateChatUI({ job, source }: { job: any; source?: st
             <div className="px-4 py-3 rounded-2xl bg-slate-50 border border-slate-200 rounded-tl-sm flex items-center gap-2">
               <Loader2 size={15} className="animate-spin text-slate-400" />
               <span className="text-sm text-slate-500">Typing...</span>
+            </div>
+          </div>
+        )}
+
+        {/* Interview slot picker — deterministic, no AI call involved. */}
+        {isDone && !selectedSlot && interviewSlots.length > 0 && (
+          <div className="flex gap-3">
+            <div className="w-8 h-8 shrink-0 rounded-full bg-primary flex items-center justify-center text-white text-xs font-bold">N</div>
+            <div className="max-w-[85%] px-4 py-3 rounded-2xl bg-slate-50 border border-slate-200 text-slate-800 rounded-tl-sm">
+              <p className="text-[15px] leading-relaxed mb-3">
+                Good news — we'd like to set up an interview. Pick whichever time works for you:
+              </p>
+              <div className="space-y-2">
+                {interviewSlots.map((slot) => (
+                  <button
+                    key={slot.id}
+                    type="button"
+                    disabled={isBooking}
+                    onClick={() => handlePickSlot(slot.id)}
+                    className="w-full text-left px-3 py-2.5 rounded-xl border border-slate-200 bg-white hover:border-primary hover:bg-primary/5 transition-colors text-sm font-medium text-slate-800 disabled:opacity-50"
+                  >
+                    {formatSlotTime(slot.time)}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {selectedSlot && (
+          <div className="flex gap-3">
+            <div className="w-8 h-8 shrink-0 rounded-full bg-primary flex items-center justify-center text-white text-xs font-bold">N</div>
+            <div className="max-w-[85%] px-4 py-3 rounded-2xl bg-slate-50 border border-slate-200 text-slate-800 rounded-tl-sm">
+              <p className="text-[15px] leading-relaxed">
+                You're booked for <span className="font-semibold">{formatSlotTime(selectedSlot.time)}</span>.
+              </p>
+              <a
+                href={selectedSlot.link}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-block mt-2 text-sm font-semibold text-primary underline"
+              >
+                Join the interview link
+              </a>
+            </div>
+          </div>
+        )}
+        {isDone && finalStatus === 'qualified' && !selectedSlot && interviewSlots.length === 0 && (
+          <div className="flex gap-3">
+            <div className="w-8 h-8 shrink-0 rounded-full bg-primary flex items-center justify-center text-white text-xs font-bold">N</div>
+            <div className="max-w-[85%] px-4 py-3 rounded-2xl bg-slate-50 border border-slate-200 text-slate-800 rounded-tl-sm">
+              <p className="text-[15px] leading-relaxed">Our team will get back to you shortly with next steps.</p>
             </div>
           </div>
         )}

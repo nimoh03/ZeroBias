@@ -1,12 +1,16 @@
 import {
   ArrowLeft, CheckCircle2, XCircle, UserCheck,
-  Sparkles, MessageSquare, Bot, User,
-  ThumbsUp, AlertTriangle
+  Sparkles, ThumbsUp, AlertTriangle, Clock
 } from 'lucide-react';
 import Link from 'next/link';
+import { Suspense } from 'react';
 import { notFound } from 'next/navigation';
 import { createClient } from '@/utils/supabase/server';
-import { updateCandidateStatus } from './action';
+import { updateCandidateStatus, resetIfInterviewExpired } from './action';
+import InterviewScheduler from './InterviewScheduler';
+import TranscriptPanel from './TranscriptPanel';
+import JobMatchesPanel from './JobMatchesPanel';
+import { SkeletonBlock } from '@/components/Skeleton';
 
 const statusLabel: Record<string, string> = {
   screening: 'Screening in progress',
@@ -15,13 +19,62 @@ const statusLabel: Record<string, string> = {
   needs_review: 'Needs Human Review',
 };
 
+function InterviewStatusBadge({ time }: { time: string }) {
+  const diffMs = new Date(time).getTime() - Date.now();
+  const hours = Math.abs(diffMs) / (1000 * 60 * 60);
+
+  let label: string;
+  let classes: string;
+  if (diffMs < 0) {
+    label = 'Interview time has passed';
+    classes = 'bg-orange-100 text-orange-700';
+  } else if (hours <= 3) {
+    label = 'Interview coming up soon';
+    classes = 'bg-red-100 text-red-700';
+  } else if (hours <= 24) {
+    label = 'Interview within 24 hours';
+    classes = 'bg-blue-50 text-primary';
+  } else {
+    label = 'Interview scheduled';
+    classes = 'bg-surface-container-high text-on-surface-variant';
+  }
+
+  return (
+    <div className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold ${classes}`}>
+      <Clock size={14} />
+      {label} — {new Date(time).toLocaleString(undefined, { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}
+    </div>
+  );
+}
+
+function TranscriptPanelSkeleton() {
+  return (
+    <div className="lg:col-span-8 bg-surface-container-lowest rounded-xl border border-outline-variant shadow-sm h-[800px] p-6 space-y-4">
+      <SkeletonBlock className="h-5 w-48" />
+      <SkeletonBlock className="h-16 w-2/3" />
+      <SkeletonBlock className="h-16 w-2/3 ml-auto" />
+      <SkeletonBlock className="h-16 w-1/2" />
+    </div>
+  );
+}
+
+function JobMatchesSkeleton() {
+  return (
+    <div className="bg-surface-container-lowest p-6 rounded-xl border border-outline-variant shadow-sm space-y-3">
+      <SkeletonBlock className="h-4 w-1/2" />
+      <SkeletonBlock className="h-10 w-full rounded-xl" />
+      <SkeletonBlock className="h-10 w-full rounded-xl" />
+    </div>
+  );
+}
+
 export default async function CandidateDetail({ params }: { params: Promise<{ candidateId: string }> }) {
   const { candidateId } = await params;
   const supabase = await createClient();
 
   const { data: candidate, error } = await supabase
     .from('candidates')
-    .select('*, jobs(title)')
+    .select('*, jobs(title, recruiter_id)')
     .eq('id', candidateId)
     .single();
 
@@ -30,11 +83,12 @@ export default async function CandidateDetail({ params }: { params: Promise<{ ca
     return notFound();
   }
 
-  const { data: transcripts } = await supabase
-    .from('transcripts')
-    .select('*')
-    .eq('candidate_id', candidateId)
-    .order('created_at', { ascending: true });
+  const wasReset = await resetIfInterviewExpired(candidateId, candidate.selected_slot || null);
+  if (wasReset) {
+    candidate.selected_slot = null;
+    candidate.interview_slots = [];
+    candidate.interview_scheduled_at = null;
+  }
 
   const initials = candidate.name
     ? candidate.name.trim().split(/\s+/).map((p: string) => p[0]).slice(0, 2).join('').toUpperCase()
@@ -43,11 +97,11 @@ export default async function CandidateDetail({ params }: { params: Promise<{ ca
   const strengths: string[] = candidate.strengths || [];
   const concerns: string[] = candidate.concerns || [];
   const hasScore = typeof candidate.score === 'number';
+  const showJobMatches = candidate.status === 'rejected' || candidate.status === 'needs_review';
 
   return (
     <div className="p-6 md:p-8 max-w-container-max mx-auto space-y-6">
 
-      {/* Top Navigation */}
       <div className="flex items-center gap-4 text-sm font-medium">
         <Link href="/candidates" className="text-on-surface-variant hover:text-primary flex items-center gap-1 transition-colors">
           <ArrowLeft size={16} /> Back to Pipeline
@@ -60,10 +114,8 @@ export default async function CandidateDetail({ params }: { params: Promise<{ ca
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
 
-        {/* Left Column: AI Analysis & Profile (4 cols) */}
         <div className="lg:col-span-4 space-y-6">
 
-          {/* Profile Card */}
           <div className="bg-surface-container-lowest p-6 rounded-xl border border-outline-variant shadow-sm text-center">
             <div className="w-20 h-20 rounded-full bg-primary-container text-on-primary-container flex items-center justify-center text-2xl font-bold mx-auto mb-4 shadow-inner">
               {initials}
@@ -85,7 +137,6 @@ export default async function CandidateDetail({ params }: { params: Promise<{ ca
             )}
           </div>
 
-          {/* AI Recommendation (The "Wow" Feature) */}
           <div className="bg-primary/5 p-6 rounded-xl border border-primary/20">
             <div className="flex items-center gap-2 mb-4">
               <Sparkles className="text-primary" size={20} />
@@ -136,7 +187,6 @@ export default async function CandidateDetail({ params }: { params: Promise<{ ca
             )}
           </div>
 
-          {/* Action Buttons */}
           <div className="space-y-3">
             <form action={async () => { "use server"; await updateCandidateStatus(candidateId, "qualified"); }}>
               <button
@@ -164,49 +214,40 @@ export default async function CandidateDetail({ params }: { params: Promise<{ ca
             </form>
           </div>
 
+          {candidate.status === 'qualified' && (
+            <>
+              {candidate.selected_slot && (
+                <InterviewStatusBadge time={candidate.selected_slot.time} />
+              )}
+              <InterviewScheduler
+                candidateId={candidateId}
+                existingSlots={candidate.interview_slots || []}
+                selectedSlot={candidate.selected_slot || null}
+              />
+            </>
+          )}
+
+          {showJobMatches && (
+            <Suspense fallback={<JobMatchesSkeleton />}>
+              <JobMatchesPanel
+                candidateId={candidateId}
+                jobId={candidate.job_id}
+                recruiterId={candidate.jobs?.recruiter_id}
+                candidate={{
+                  summary: candidate.summary,
+                  strengths: candidate.strengths,
+                  concerns: candidate.concerns,
+                  cv_summary: candidate.cv_summary,
+                }}
+              />
+            </Suspense>
+          )}
+
         </div>
 
-        {/* Right Column: Chat Transcript (8 cols) */}
-        <div className="lg:col-span-8 bg-surface-container-lowest rounded-xl border border-outline-variant shadow-sm flex flex-col h-[800px]">
-
-          <div className="p-4 border-b border-outline-variant flex items-center gap-2 shrink-0">
-            <MessageSquare size={18} className="text-on-surface-variant" />
-            <h3 className="text-sm font-bold text-on-surface">Screening Transcript</h3>
-            <span className="ml-auto text-xs text-on-surface-variant">
-              {transcripts && transcripts.length > 0
-                ? new Date(transcripts[transcripts.length - 1].created_at).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })
-                : 'No messages yet'}
-            </span>
-          </div>
-
-          <div className="flex-1 overflow-y-auto p-6 space-y-6">
-            {(!transcripts || transcripts.length === 0) && (
-              <p className="text-sm text-on-surface-variant text-center py-12">No transcript yet.</p>
-            )}
-
-            {transcripts?.map((m) => (
-              <div
-                key={m.id}
-                className={`flex gap-4 max-w-[85%] ${m.role === 'user' ? 'ml-auto flex-row-reverse' : ''}`}
-              >
-                <div className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 mt-1 shadow-sm ${
-                  m.role === 'user' ? 'bg-surface-container-highest' : 'bg-primary'
-                }`}>
-                  {m.role === 'user'
-                    ? <User size={16} className="text-on-surface-variant" />
-                    : <Bot size={16} className="text-on-primary" />}
-                </div>
-                <div className={`p-4 rounded-2xl text-sm leading-relaxed ${
-                  m.role === 'user'
-                    ? 'bg-primary text-on-primary rounded-tr-sm shadow-sm'
-                    : 'bg-surface-container-high text-on-surface rounded-tl-sm border border-outline-variant/30'
-                }`}>
-                  {m.content}
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
+        <Suspense fallback={<TranscriptPanelSkeleton />}>
+          <TranscriptPanel candidateId={candidateId} />
+        </Suspense>
 
       </div>
     </div>

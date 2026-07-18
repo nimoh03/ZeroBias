@@ -1,20 +1,26 @@
 import { createClient } from "@/utils/supabase/server";
 import { Bell } from "lucide-react";
+import Link from "next/link";
+
+// "Pending" = an interview scheduled and starting within the next 24
+// hours, or overdue by less than the 30-minute grace window used in
+// candidates/[candidateId]/action.ts before it's auto-reset. Anything
+// older than that has already been lazily cleared elsewhere.
+const UPCOMING_WINDOW_MS = 24 * 60 * 60 * 1000;
+const GRACE_MS = 30 * 60 * 1000;
 
 export default async function Header() {
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
-  
-  const { data: profile } = await supabase
-    .from('profiles')
-    .select('full_name, company_name')
-    .eq('id', user?.id)
-    .single();
+
+  const [{ data: profile }, { data: jobs }] = await Promise.all([
+    supabase.from('profiles').select('full_name, company_name').eq('id', user?.id).single(),
+    supabase.from('jobs').select('id').eq('recruiter_id', user?.id),
+  ]);
 
   const fullName = profile?.full_name || 'Recruiter';
   const role = profile?.company_name || 'Enterprise Recruiter';
-  
-  // Extract initials (e.g., "Jane Doe" -> "JD")
+
   const initials = fullName
     .split(' ')
     .map((n: string) => n[0])
@@ -22,18 +28,43 @@ export default async function Header() {
     .substring(0, 2)
     .toUpperCase();
 
+  // Count candidates (across this recruiter's jobs) with an interview
+  // starting soon or just now. Cheap: only candidates with a selected_slot
+  // are considered, filtered client-side since it's a small set.
+  let pendingCount = 0;
+  const jobIds = jobs?.map(j => j.id) || [];
+  if (jobIds.length > 0) {
+    const { data: scheduled } = await supabase
+      .from('candidates')
+      .select('selected_slot')
+      .in('job_id', jobIds)
+      .not('selected_slot', 'is', null);
+
+    const now = Date.now();
+    pendingCount = (scheduled || []).filter((c) => {
+      const t = new Date((c.selected_slot as any)?.time).getTime();
+      if (Number.isNaN(t)) return false;
+      const diff = t - now;
+      return diff <= UPCOMING_WINDOW_MS && diff >= -GRACE_MS;
+    }).length;
+  }
+
   return (
     <header className="h-20 px-6 md:px-10 flex items-center justify-between sticky top-0 bg-white/80 backdrop-blur-md z-40 border-b border-slate-100">
       <div className="flex-1 min-w-0 pr-4">
         <h2 className="text-xl font-bold text-slate-900 truncate">Dashboard</h2>
       </div>
-      
+
       <div className="flex items-center gap-5 shrink-0">
-        <button className="relative p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-50 rounded-full transition-colors">
+        <Link href="/candidates" className="relative p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-50 rounded-full transition-colors" title={pendingCount > 0 ? `${pendingCount} interview${pendingCount === 1 ? '' : 's'} coming up` : undefined}>
           <Bell size={20} />
-          <span className="absolute top-2 right-2 w-2 h-2 bg-red-500 rounded-full border-2 border-white"></span>
-        </button>
-        
+          {pendingCount > 0 && (
+            <span className="absolute top-0.5 right-0.5 min-w-[16px] h-4 px-1 bg-red-500 text-white text-[10px] font-bold rounded-full border-2 border-white flex items-center justify-center">
+              {pendingCount}
+            </span>
+          )}
+        </Link>
+
         <div className="flex items-center gap-3 pl-5 border-l border-slate-200">
           <div className="text-right hidden md:block">
             <p className="text-sm font-bold text-slate-900 truncate max-w-[150px]">{fullName}</p>
