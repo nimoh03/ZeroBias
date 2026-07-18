@@ -2,7 +2,7 @@
 
 import { useState, useTransition, KeyboardEvent } from "react";
 import Link from "next/link";
-import { ArrowLeft, Sparkles, Briefcase, Target, CheckCircle2, Loader2, X, FileText, Gauge, MessageSquareText, ListChecks } from "lucide-react";
+import { ArrowLeft, Sparkles, Briefcase, Target, CheckCircle2, Loader2, X, FileText, Gauge, MessageSquareText, ListChecks, Calendar } from "lucide-react";
 import { createJobAction } from "./action";
 import ConversationalBuilder from "./ConversationalBuilder";
 
@@ -19,6 +19,7 @@ export default function NewJobPage() {
     finalAction: "",
   });
 
+  const [scheduleInterview, setScheduleInterview] = useState(false);
   const [requestCv, setRequestCv] = useState(false);
   const [screeningRigor, setScreeningRigor] = useState<"thorough" | "trusting">("thorough");
 
@@ -39,10 +40,9 @@ export default function NewJobPage() {
     setFormData(prev => ({ ...prev, [e.target.name]: e.target.value }));
   };
 
-  // Magic Enter-to-Add Logic
   const handleAddTag = (e: KeyboardEvent<HTMLInputElement>, type: 'must' | 'nice') => {
     if (e.key === 'Enter') {
-      e.preventDefault(); // Stop the form from submitting
+      e.preventDefault(); 
       
       if (type === 'must' && mustHaveInput.trim()) {
         setMustHaves(prev => [...prev, mustHaveInput.trim()]);
@@ -65,7 +65,6 @@ export default function NewJobPage() {
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     
-    // Ensure they added at least one dealbreaker for the AI
     if (mustHaves.length === 0) {
       alert("Please add at least one Absolute Dealbreaker.");
       return;
@@ -73,9 +72,10 @@ export default function NewJobPage() {
 
     startTransition(async () => {
       try {
-        // Format the arrays into clean text for the database/AI
         const payload = {
           ...formData,
+          finalAction: scheduleInterview ? formData.finalAction : "",
+          scheduleInterview,
           mustHaves: mustHaves.map(item => `- ${item}`).join('\n'),
           niceToHaves: niceToHaves.map(item => `- ${item}`).join('\n'),
           requestCv,
@@ -107,9 +107,6 @@ export default function NewJobPage() {
         body: JSON.stringify({ rawText: autofillText }),
       });
       const data = await response.json();
-      if (data.usage) {
-        console.log("🔢 TOKEN USAGE (autofill):", data.usage);
-      }
       if (!response.ok) {
         setAutofillError(data.error || "Couldn't parse that. Please try again or fill in manually.");
         return;
@@ -133,7 +130,7 @@ export default function NewJobPage() {
   };
 
   return (
-    <div className="max-w-4xl mx-auto p-4 md:p-10 animate-in fade-in slide-in-from-bottom-4 duration-700">
+    <div className="max-w-4xl mx-auto p-4 md:p-6 animate-in fade-in slide-in-from-bottom-4 duration-700">
       
       {/* Header */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8">
@@ -221,7 +218,7 @@ export default function NewJobPage() {
       <form onSubmit={handleSubmit} className="space-y-6 md:space-y-8">
         
         {/* Section 1: The Basics */}
-        <div className="bg-white rounded-2xl md:rounded-3xl border border-slate-200 p-5 md:p-8 shadow-sm">
+        <div className="bg-white rounded-2xl md:rounded-3xl border border-slate-200 p-5 md:p-6 shadow-sm">
           <div className="flex items-center gap-3 mb-6">
             <div className="bg-slate-100 p-2 rounded-lg text-slate-600"><Briefcase size={20} /></div>
             <h2 className="text-lg md:text-xl font-bold text-slate-900">1. The Basics</h2>
@@ -256,15 +253,13 @@ export default function NewJobPage() {
         </div>
 
         {/* Section 2: AI Guardrails */}
-        <div className="bg-white rounded-2xl md:rounded-3xl border border-slate-200 p-5 md:p-8 shadow-sm">
+        <div className="bg-white rounded-2xl md:rounded-3xl border border-slate-200 p-5 md:p-6 shadow-sm">
           <div className="flex items-center gap-3 mb-6">
             <div className="bg-red-50 p-2 rounded-lg text-red-500"><Target size={20} /></div>
             <h2 className="text-lg md:text-xl font-bold text-slate-900">2. AI Screening Guardrails</h2>
           </div>
 
           <div className="space-y-8">
-            
-            {/* Must Haves Input */}
             <div className="space-y-3">
               <label className="text-sm font-bold text-slate-700 flex items-center gap-2">
                 Absolute Dealbreakers <span className="bg-red-100 text-red-600 text-[10px] px-2 py-0.5 rounded-full uppercase tracking-wider">Must Have</span>
@@ -285,13 +280,12 @@ export default function NewJobPage() {
                   value={mustHaveInput}
                   onChange={e => setMustHaveInput(e.target.value)}
                   onKeyDown={e => handleAddTag(e, 'must')}
-                  placeholder={mustHaves.length === 0 ? "e.g. Minimum 3 years React experience (Press Enter)" : "Add another..."} 
+                  placeholder={mustHaves.length === 0 ? "e.g. Minimum 3 years React (Press Enter)" : "Add another..."} 
                   className="flex-1 min-w-[200px] bg-transparent border-none outline-none px-2 py-1.5 text-sm text-slate-900 placeholder:text-slate-400"
                 />
               </div>
             </div>
 
-            {/* Nice to Haves Input */}
             <div className="space-y-3">
               <label className="text-sm font-bold text-slate-700 flex items-center gap-2">
                 Nice-to-Haves <span className="bg-blue-100 text-primary text-[10px] px-2 py-0.5 rounded-full uppercase tracking-wider">Bonus</span>
@@ -317,34 +311,53 @@ export default function NewJobPage() {
                 />
               </div>
             </div>
-
           </div>
         </div>
 
         {/* Section 3: What happens when they qualify */}
-        <div className="bg-white rounded-2xl md:rounded-3xl border border-slate-200 p-5 md:p-8 shadow-sm">
+        <div className="bg-white rounded-2xl md:rounded-3xl border border-slate-200 p-5 md:p-6 shadow-sm">
           <div className="flex items-center gap-3 mb-6">
             <div className="bg-emerald-50 p-2 rounded-lg text-emerald-600"><CheckCircle2 size={20} /></div>
             <h2 className="text-lg md:text-xl font-bold text-slate-900">3. What happens when they qualify?</h2>
           </div>
-          <p className="text-xs text-slate-500 mb-3">
-            Paste a link (Calendly, Google Meet, a WhatsApp group invite — anything) or just type plain instructions.
-            Qualified candidates see this the moment Nova finishes screening them. Leave blank to just say "we'll be in touch."
-          </p>
-          <input
-            name="finalAction"
-            value={formData.finalAction}
-            onChange={handleChange}
-            placeholder="e.g. https://calendly.com/you/interview or 'Reply to this WhatsApp group: ...'"
-            className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3.5 text-sm focus:bg-white focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all"
-          />
+
+          <div className="flex items-start justify-between gap-4 mb-6">
+            <div className="flex gap-3 items-start">
+              <div className="bg-slate-100 p-2 rounded-lg text-slate-600 shrink-0"><Calendar size={18} /></div>
+              <div>
+                <p className="text-sm font-bold text-slate-900">Enable AI Interview Scheduling</p>
+                <p className="text-xs text-slate-500 mt-1">If enabled, Nova will provide qualified candidates with your scheduling link. If disabled, Nova will just inform them the team will review their application.</p>
+              </div>
+            </div>
+            <label className="relative inline-flex items-center cursor-pointer shrink-0 mt-1">
+              <input
+                type="checkbox"
+                className="sr-only peer"
+                checked={scheduleInterview}
+                onChange={() => setScheduleInterview(!scheduleInterview)}
+              />
+              <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary"></div>
+            </label>
+          </div>
+
+          {scheduleInterview && (
+            <div className="animate-in fade-in slide-in-from-top-2">
+              <input
+                name="finalAction"
+                value={formData.finalAction}
+                onChange={handleChange}
+                placeholder="e.g. Please book a time here: https://calendly.com/you/interview"
+                className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3.5 text-sm focus:bg-white focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all"
+              />
+            </div>
+          )}
 
           <div className="flex items-center justify-between gap-4 mt-6 pt-6 border-t border-slate-100">
             <div className="flex gap-3 items-start">
               <div className="bg-slate-100 p-2 rounded-lg text-slate-600 shrink-0"><FileText size={18} /></div>
               <div>
                 <p className="text-sm font-bold text-slate-900">Ask for a CV during screening</p>
-                <p className="text-xs text-slate-500 mt-1">When a candidate claims a qualification (e.g. "I have an HND"), Nova will ask them to attach their CV to verify it, and skip questions the CV already answers.</p>
+                <p className="text-xs text-slate-500 mt-1">When a candidate claims a qualification, Nova will ask them to attach their CV to verify it, skipping questions the CV already answers.</p>
               </div>
             </div>
             <label className="relative inline-flex items-center cursor-pointer shrink-0">
