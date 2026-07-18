@@ -16,18 +16,9 @@ export async function POST(req: Request) {
       return Response.json({ error: "You must be logged in." }, { status: 401 });
     }
 
-    let groqKey: string | null | undefined = process.env.GROQ_API_KEY;
-    let geminiKey: string | null | undefined = process.env.GEMINI_API_KEY;
-
-    const { data: profile } = await supabase
-      .from("profiles")
-      .select("use_own_keys, groq_api_key, gemini_api_key")
-      .eq("id", user.id)
-      .single();
-    if (profile?.use_own_keys) {
-      if (profile.groq_api_key) groqKey = profile.groq_api_key;
-      if (profile.gemini_api_key) geminiKey = profile.gemini_api_key;
-    }
+    // Keys — platform-managed only, no per-recruiter override.
+    const deepseekKey = process.env.DEEPSEEK_API_KEY;
+    const geminiKey = process.env.GEMINI_API_KEY;
 
     const systemPrompt = `You extract structured job posting data from messy, pasted job descriptions. Respond with ONLY a JSON object, no markdown fences, no commentary, in exactly this shape:
 {"title":"...","location":"...","jobType":"Full-time|Contract|Part-time|Internship","description":"a 2-3 sentence candidate-facing summary in plain prose","mustHaves":["short requirement","short requirement"],"niceToHaves":["short requirement","short requirement"]}
@@ -35,7 +26,7 @@ export async function POST(req: Request) {
 Rules: mustHaves are hard dealbreakers only (years of experience, required certifications, required skills explicitly stated as required/must-have). niceToHaves are anything stated as a plus/preferred/bonus. Keep each item short (under 12 words). If jobType isn't stated, infer the most likely one. If something genuinely isn't in the text, use an empty string or empty array rather than inventing details.`;
 
     const { text, provider, model, usage } = await getAIReply({
-      groqKey,
+      deepseekKey,
       geminiKey,
       messages: [
         { role: "system", content: systemPrompt },
@@ -44,16 +35,22 @@ Rules: mustHaves are hard dealbreakers only (years of experience, required certi
       maxTokens: 600,
     });
 
-    // Token usage for this autofill call — was previously discarded entirely.
-    console.log("🔢 TOKEN USAGE:", {
+    // Persist usage for this call — no job_id/candidate_id yet at this
+    // stage (this runs before a job exists), just tagged to the recruiter.
+    const { error: usageError } = await supabase.from("usage_events").insert({
       source: "autofill_job",
-      userId: user.id,
+      recruiter_id: user.id,
       provider,
       model,
-      promptTokens: usage.promptTokens,
-      completionTokens: usage.completionTokens,
-      totalTokens: usage.totalTokens,
+      prompt_tokens: usage.promptTokens,
+      completion_tokens: usage.completionTokens,
+      total_tokens: usage.totalTokens,
+      cache_hit_tokens: usage.cacheHitTokens,
+      cache_miss_tokens: usage.cacheMissTokens,
     });
+    if (usageError) {
+      console.error("⚠️ COULD NOT LOG USAGE EVENT:", usageError.message);
+    }
 
     const cleaned = text.replace(/```json|```/g, "").trim();
     const parsed = JSON.parse(cleaned);

@@ -16,18 +16,9 @@ export async function POST(req: Request) {
       return Response.json({ error: "You must be logged in." }, { status: 401 });
     }
 
-    let groqKey: string | null | undefined = process.env.GROQ_API_KEY;
-    let geminiKey: string | null | undefined = process.env.GEMINI_API_KEY;
-
-    const { data: profile } = await supabase
-      .from("profiles")
-      .select("use_own_keys, groq_api_key, gemini_api_key")
-      .eq("id", user.id)
-      .single();
-    if (profile?.use_own_keys) {
-      if (profile.groq_api_key) groqKey = profile.groq_api_key;
-      if (profile.gemini_api_key) geminiKey = profile.gemini_api_key;
-    }
+    // Keys — platform-managed only, no per-recruiter override.
+    const deepseekKey = process.env.DEEPSEEK_API_KEY;
+    const geminiKey = process.env.GEMINI_API_KEY;
 
     const systemPrompt = `A recruiter is hiring for "${title}" in "${location}" and typed a list of things they want in a candidate, one line at a time (each line below is one thing they typed). Clean it up. Respond with ONLY a JSON object, no markdown fences, no commentary, in exactly this shape:
 {"requirements":["short requirement","short requirement"],"description":"a 2-3 sentence candidate-facing summary in plain prose"}
@@ -44,7 +35,7 @@ Rules for description:
 - Don't invent responsibilities or perks that weren't implied.`;
 
     const { text, provider, model, usage } = await getAIReply({
-      groqKey,
+      deepseekKey,
       geminiKey,
       messages: [
         { role: "system", content: systemPrompt },
@@ -53,16 +44,21 @@ Rules for description:
       maxTokens: 500,
     });
 
-    // Token usage for this job-builder call — was previously discarded entirely.
-    console.log("🔢 TOKEN USAGE:", {
+    // Persist usage for this call, tagged to the recruiter.
+    const { error: usageError } = await supabase.from("usage_events").insert({
       source: "job_builder",
-      userId: user.id,
+      recruiter_id: user.id,
       provider,
       model,
-      promptTokens: usage.promptTokens,
-      completionTokens: usage.completionTokens,
-      totalTokens: usage.totalTokens,
+      prompt_tokens: usage.promptTokens,
+      completion_tokens: usage.completionTokens,
+      total_tokens: usage.totalTokens,
+      cache_hit_tokens: usage.cacheHitTokens,
+      cache_miss_tokens: usage.cacheMissTokens,
     });
+    if (usageError) {
+      console.error("⚠️ COULD NOT LOG USAGE EVENT:", usageError.message);
+    }
 
     const cleaned = text.replace(/```json|```/g, "").trim();
     const parsed = JSON.parse(cleaned);

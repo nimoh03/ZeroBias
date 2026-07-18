@@ -1,45 +1,51 @@
 // Centralized AI calling with automatic failover.
 //
-// Order: try every Gemini model in GEMINI_MODELS first, in order. Gemini
-// is the primary provider for candidate-facing screening — it doesn't
-// have the reasoning-leak behavior Groq's small/preview models do, and
-// is more consistent at following the strict one-question-per-message /
-// JSON-block instructions in the system prompt. If Gemini is completely
-// unavailable (no key, or every model fails — rate limited, down, etc.),
-// silently fall through to Groq and try every model in GROQ_MODELS. The
-// caller never needs to know which one actually answered — candidates
-// and recruiters never see a provider hiccup.
+// Order: try DeepSeek (deepseek-v4-flash) first — it's now the primary
+// provider for candidate-facing screening. If DeepSeek is completely
+// unavailable (no key, or the call fails — rate limited, down, etc.),
+// silently fall through to every model in GEMINI_MODELS. The caller
+// never needs to know which one actually answered — candidates and
+// recruiters never see a provider hiccup.
 //
-// Model lists deliberately kept short and current. Free-tier catalogs on
-// both providers churn every few months — if requests start failing here,
-// check console.groq.com/docs/models and ai.google.dev/gemini-api/docs/models
-// for renamed/retired models before assuming the code is broken.
+// Groq has been removed as a provider entirely (previously the final
+// fallback) — DeepSeek Flash's pricing and concurrency make a second
+// fallback tier unnecessary, and it simplifies the failover chain to
+// two providers instead of three.
+//
+// Model lists deliberately kept short and current. Free-tier catalogs
+// churn every few months — if requests start failing here, check
+// api-docs.deepseek.com and ai.google.dev/gemini-api/docs/models for
+// renamed/retired models before assuming the code is broken.
 
 export type ChatMessage = { role: "system" | "user" | "assistant"; content: string };
 
 // Token usage returned alongside every AI reply so callers can log/sum
-// cost per candidate/conversation. Both providers report this natively —
-// we were previously discarding it.
-export type TokenUsage = { promptTokens: number; completionTokens: number; totalTokens: number };
+// cost per candidate/conversation. Both providers report the base three
+// fields natively. cacheHitTokens/cacheMissTokens are DeepSeek-specific
+// (its disk cache reports which portion of the prompt was a cache hit) —
+// they default to 0 for Gemini, which doesn't expose an equivalent.
+export type TokenUsage = {
+  promptTokens: number;
+  completionTokens: number;
+  totalTokens: number;
+  cacheHitTokens: number;
+  cacheMissTokens: number;
+};
 
-// qwen/qwen3.6-27b deliberately left out of the fallback list: it's a
-// preview/vision model, not meant for production text screening, and it
-// was the source of raw <think> reasoning tokens leaking into candidate
-// messages. gpt-oss models stay as the Groq fallback with reasoning
-// explicitly suppressed below.
-//
-// gemini-2.5-flash tried first now (was second) — it holds multi-step
-// instructions (like rule 9a's "rephrase, don't repeat" logic) more
-// reliably than gemini-flash-latest, which matters most for the
-// candidate-facing screening chat. gemini-flash-latest stays as a
-// same-provider fallback before we ever drop down to Groq.
-const GROQ_MODELS = ["openai/gpt-oss-20b", "openai/gpt-oss-120b"];
+// deepseek-v4-flash is the primary model for candidate-facing screening:
+// short conversational turns against a big rule-dense system prompt is
+// exactly its use case, and it's far cheaper (and higher concurrency)
+// than deepseek-v4-pro. Only one DeepSeek model is tried — if it fails,
+// we drop straight to Gemini rather than trying Pro, since Pro doesn't
+// meaningfully change reliability here, only cost.
+const DEEPSEEK_MODELS = ["deepseek-v4-flash"];
 // gemini-3.5-flash tried first — strongest instruction-following of the
 // Flash tier, which matters most for holding a long, rule-dense system
 // prompt without drifting (the "asks two questions" / "repeats itself"
 // failure modes seen from smaller models). gemini-3-flash and
 // gemini-2.5-flash stay as same-provider fallbacks at lower cost if 3.5
-// is unavailable or rate limited, before ever dropping to Groq.
+// is unavailable or rate limited. Gemini is now the last stop in the
+// chain — if every model here fails too, the request fails.
 const GEMINI_MODELS = ["gemini-3.5-flash", "gemini-3-flash", "gemini-2.5-flash", "gemini-flash-latest"];
 
 // Defense in depth: even with reasoning suppressed via API params, strip
@@ -198,8 +204,8 @@ export function enforceSingleQuestion(text: string): string {
   return kept.join(" ").trim();
 }
 
-async function callGroq(apiKey: string, model: string, messages: ChatMessage[], maxTokens: number): Promise<{ text: string; usage: TokenUsage }> {
-  const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+async function callDeepSeek(apiKey: string, model: string, messages: ChatMessage[], maxTokens: number): Promise<{ text: string; usage: TokenUsage }> {
+  const response = await fetch("https://api.deepseek.com/chat/completions", {
     method: "POST",
     headers: {
       "Authorization": `Bearer ${apiKey}`,
@@ -209,33 +215,36 @@ async function callGroq(apiKey: string, model: string, messages: ChatMessage[], 
       model,
       messages,
       temperature: 0.6,
-      max_completion_tokens: maxTokens,
-      // gpt-oss models don't support reasoning_format, but do support
-      // include_reasoning — keep reasoning tokens out of the main content
-      // field entirely rather than trusting a <think>-tag convention.
-      include_reasoning: false,
+      max_tokens: maxTokens,
+      // deepseek-v4-flash defaults to thinking mode on. We want plain
+      // conversational replies for the candidate-facing chat, not
+      // reasoning traces, and disabling it also shaves latency/cost
+      // off every turn.
+      thinking: { type: "disabled" },
     }),
   });
 
   if (!response.ok) {
     const errorText = await response.text();
-    throw new Error(`Groq/${model} ${response.status}: ${errorText}`);
+    throw new Error(`DeepSeek/${model} ${response.status}: ${errorText}`);
   }
 
   const data = await response.json();
   const text = data?.choices?.[0]?.message?.content;
-  if (!text) throw new Error(`Groq/${model} returned no content`);
+  if (!text) throw new Error(`DeepSeek/${model} returned no content`);
 
-  // OpenAI-compatible usage block — always present on a successful
-  // Groq chat completion, but default to 0s defensively in case a
-  // future response shape omits it.
+  // OpenAI-compatible usage block, plus DeepSeek's disk-cache fields —
+  // prompt_cache_hit_tokens / prompt_cache_miss_tokens — which only
+  // DeepSeek reports. Defaults to 0 if a response ever omits them.
   const usage: TokenUsage = {
     promptTokens: data?.usage?.prompt_tokens ?? 0,
     completionTokens: data?.usage?.completion_tokens ?? 0,
     totalTokens: data?.usage?.total_tokens ?? 0,
+    cacheHitTokens: data?.usage?.prompt_cache_hit_tokens ?? 0,
+    cacheMissTokens: data?.usage?.prompt_cache_miss_tokens ?? 0,
   };
 
-  return { text: stripHarmonyTokens(stripThinkTags(text)), usage };
+  return { text: stripThinkTags(text), usage };
 }
 
 async function callGemini(apiKey: string, model: string, messages: ChatMessage[], maxTokens: number): Promise<{ text: string; usage: TokenUsage }> {
@@ -273,10 +282,14 @@ async function callGemini(apiKey: string, model: string, messages: ChatMessage[]
 
   // Gemini reports usage under usageMetadata rather than an
   // OpenAI-style usage block — different field names, same idea.
+  // Gemini has no equivalent to DeepSeek's disk-cache reporting, so
+  // cache fields always default to 0 here.
   const usage: TokenUsage = {
     promptTokens: data?.usageMetadata?.promptTokenCount ?? 0,
     completionTokens: data?.usageMetadata?.candidatesTokenCount ?? 0,
     totalTokens: data?.usageMetadata?.totalTokenCount ?? 0,
+    cacheHitTokens: 0,
+    cacheMissTokens: 0,
   };
 
   return { text: stripThinkTags(text), usage };
@@ -293,17 +306,28 @@ function sleep(ms: number) {
 }
 
 async function attemptAllProviders({
-  groqKey,
+  deepseekKey,
   geminiKey,
   messages,
   maxTokens,
 }: {
-  groqKey?: string | null;
+  deepseekKey?: string | null;
   geminiKey?: string | null;
   messages: ChatMessage[];
   maxTokens: number;
 }): Promise<{ text: string; provider: string; model: string; usage: TokenUsage } | { errors: string[] }> {
   const errors: string[] = [];
+
+  if (deepseekKey) {
+    for (const model of DEEPSEEK_MODELS) {
+      try {
+        const { text, usage } = await callDeepSeek(deepseekKey, model, messages, maxTokens);
+        return { text, provider: "deepseek", model, usage };
+      } catch (err: any) {
+        errors.push(err.message || String(err));
+      }
+    }
+  }
 
   if (geminiKey) {
     for (const model of GEMINI_MODELS) {
@@ -316,32 +340,21 @@ async function attemptAllProviders({
     }
   }
 
-  if (groqKey) {
-    for (const model of GROQ_MODELS) {
-      try {
-        const { text, usage } = await callGroq(groqKey, model, messages, maxTokens);
-        return { text, provider: "groq", model, usage };
-      } catch (err: any) {
-        errors.push(err.message || String(err));
-      }
-    }
-  }
-
   return { errors };
 }
 
 export async function getAIReply({
-  groqKey,
+  deepseekKey,
   geminiKey,
   messages,
   maxTokens = 450,
 }: {
-  groqKey?: string | null;
+  deepseekKey?: string | null;
   geminiKey?: string | null;
   messages: ChatMessage[];
   maxTokens?: number;
 }): Promise<{ text: string; provider: string; model: string; usage: TokenUsage }> {
-  const first = await attemptAllProviders({ groqKey, geminiKey, messages, maxTokens });
+  const first = await attemptAllProviders({ deepseekKey, geminiKey, messages, maxTokens });
   if (!("errors" in first)) return first;
 
   // Every model on both providers failed. If it looks transient (rate
@@ -353,7 +366,7 @@ export async function getAIReply({
   if (looksTransient) {
     console.error("⚠️ ALL AI PROVIDERS FAILED ON FIRST PASS, RETRYING:", first.errors.join(" | "));
     await sleep(1500);
-    const second = await attemptAllProviders({ groqKey, geminiKey, messages, maxTokens });
+    const second = await attemptAllProviders({ deepseekKey, geminiKey, messages, maxTokens });
     if (!("errors" in second)) return second;
     console.error("🔥 ALL AI PROVIDERS FAILED ON RETRY:", second.errors.join(" | "));
     throw new Error("All AI providers are currently unavailable.");
@@ -377,7 +390,7 @@ export async function extractCvSummaryWithGemini({
   fileBase64: string;
   mimeType: string;
   prompt: string;
-}): Promise<{ text: string; usage: TokenUsage } | null> {
+}): Promise<{ text: string; model: string; usage: TokenUsage } | null> {
   if (!geminiKey) return null;
 
   for (const model of GEMINI_MODELS) {
@@ -407,8 +420,10 @@ export async function extractCvSummaryWithGemini({
           promptTokens: data?.usageMetadata?.promptTokenCount ?? 0,
           completionTokens: data?.usageMetadata?.candidatesTokenCount ?? 0,
           totalTokens: data?.usageMetadata?.totalTokenCount ?? 0,
+          cacheHitTokens: 0,
+          cacheMissTokens: 0,
         };
-        return { text, usage };
+        return { text, model, usage };
       }
     } catch {
       // try next model

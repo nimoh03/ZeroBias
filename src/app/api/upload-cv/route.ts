@@ -1,5 +1,5 @@
 import { createAdminClient } from "@/utils/supabase/admin";
-import { extractCvSummaryWithGemini } from "@/utils/ai";
+import { extractCvSummaryWithGemini, TokenUsage } from "@/utils/ai";
 
 export const maxDuration = 30;
 
@@ -46,19 +46,9 @@ export async function POST(req: Request) {
     // rate limited, or a Word doc it can't parse), we still keep the
     // upload and just skip the summary. Never block on this.
     let cvSummary: string | null = null;
-    let cvUsage: { promptTokens: number; completionTokens: number; totalTokens: number } | null = null;
+    let cvUsage: TokenUsage | null = null;
     if (file.type === "application/pdf") {
-      let geminiKey: string | null | undefined = process.env.GEMINI_API_KEY;
-      if (recruiterId) {
-        const { data: profile } = await supabase
-          .from("profiles")
-          .select("use_own_keys, gemini_api_key")
-          .eq("id", recruiterId)
-          .single();
-        if (profile?.use_own_keys && profile?.gemini_api_key) {
-          geminiKey = profile.gemini_api_key;
-        }
-      }
+      const geminiKey = process.env.GEMINI_API_KEY;
 
       const cvResult = await extractCvSummaryWithGemini({
         geminiKey,
@@ -70,14 +60,21 @@ export async function POST(req: Request) {
       if (cvResult) {
         cvSummary = cvResult.text;
         cvUsage = cvResult.usage;
-        console.log("🔢 TOKEN USAGE:", {
-          candidateId,
-          source: "cv_extraction",
+        const { error: usageError } = await supabase.from("usage_events").insert({
+          source: "cv_extract",
+          candidate_id: candidateId,
+          recruiter_id: recruiterId,
           provider: "gemini",
-          promptTokens: cvResult.usage.promptTokens,
-          completionTokens: cvResult.usage.completionTokens,
-          totalTokens: cvResult.usage.totalTokens,
+          model: cvResult.model,
+          prompt_tokens: cvResult.usage.promptTokens,
+          completion_tokens: cvResult.usage.completionTokens,
+          total_tokens: cvResult.usage.totalTokens,
+          cache_hit_tokens: cvResult.usage.cacheHitTokens,
+          cache_miss_tokens: cvResult.usage.cacheMissTokens,
         });
+        if (usageError) {
+          console.error("⚠️ COULD NOT LOG USAGE EVENT:", usageError.message);
+        }
       }
     }
 

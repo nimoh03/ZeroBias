@@ -36,14 +36,30 @@ export async function POST(req: Request) {
         console.error("🔥 COULD NOT BACKFILL TRANSCRIPT:", backfillError.message);
       }
     } else {
-      const latestMessage = messages[messages.length - 1];
-      const { error: appendError } = await supabase.from("transcripts").insert({
+      // Every message after the last assistant turn is "new" — unsaved.
+      // This used to just be messages[messages.length - 1], which
+      // assumed exactly one new user message per call. That assumption
+      // breaks now that the client can batch several rapid messages
+      // into a single debounced call — without this, every message but
+      // the last in a batch would silently never reach transcripts.
+      let lastAssistantIndex = -1;
+      for (let i = messages.length - 1; i >= 0; i--) {
+        if (messages[i].role === "assistant") {
+          lastAssistantIndex = i;
+          break;
+        }
+      }
+      const newMessages = messages.slice(lastAssistantIndex + 1);
+
+      const appendRows = newMessages.map((m: { role: string; content: string }) => ({
         candidate_id: candidateId,
-        role: latestMessage.role,
-        content: latestMessage.content,
-      });
+        role: m.role,
+        content: m.content,
+      }));
+
+      const { error: appendError } = await supabase.from("transcripts").insert(appendRows);
       if (appendError) {
-        console.error("🔥 COULD NOT APPEND MESSAGE:", appendError.message);
+        console.error("🔥 COULD NOT APPEND MESSAGE(S):", appendError.message);
       }
     }
 
@@ -128,21 +144,9 @@ Include this block on every turn from the moment you first learn either value, s
 
     // 3. Resolve which keys to use — the recruiter's own, if they've opted
     // in and saved them, otherwise the platform's.
-    let groqKey: string | null | undefined = process.env.GROQ_API_KEY;
-    let geminiKey: string | null | undefined = process.env.GEMINI_API_KEY;
-
-    if (jobContext?.recruiter_id) {
-      const { data: profile } = await supabase
-        .from("profiles")
-        .select("use_own_keys, groq_api_key, gemini_api_key")
-        .eq("id", jobContext.recruiter_id)
-        .single();
-
-      if (profile?.use_own_keys) {
-        if (profile.groq_api_key) groqKey = profile.groq_api_key;
-        if (profile.gemini_api_key) geminiKey = profile.gemini_api_key;
-      }
-    }
+    // 3. Keys — platform-managed only, no per-recruiter override.
+    const deepseekKey = process.env.DEEPSEEK_API_KEY;
+    const geminiKey = process.env.GEMINI_API_KEY;
 
     const apiMessages: ChatMessage[] = [
       { role: "system", content: systemPrompt },
@@ -155,19 +159,28 @@ Include this block on every turn from the moment you first learn either value, s
     // could never be parsed AND the truncated raw JSON leaked straight
     // into the candidate-facing message (see failsafe #3 below for the
     // belt-and-suspenders fix on top of this).
-    const { text: rawText, provider, model, usage } = await getAIReply({ groqKey, geminiKey, messages: apiMessages, maxTokens: 900 });
+    const { text: rawText, provider, model, usage } = await getAIReply({ deepseekKey, geminiKey, messages: apiMessages, maxTokens: 900 });
 
-    // Token usage per AI call, tagged with candidateId so you can sum
-    // across a whole conversation later (or wire this into a DB table —
-    // see ai_usage_logs suggestion — instead of/in addition to console).
-    console.log("🔢 TOKEN USAGE:", {
-      candidateId,
+    // Persist usage for this call — this is what makes cost-per-candidate
+    // and cache-hit-rate answerable later instead of just console noise.
+    // Never blocks or fails the candidate's reply: a missed usage row is
+    // an acceptable loss, a broken screening chat isn't.
+    const { error: usageError } = await supabase.from("usage_events").insert({
+      source: "chat",
+      candidate_id: candidateId,
+      recruiter_id: jobContext?.recruiter_id ?? null,
+      job_id: jobContext?.id ?? null,
       provider,
       model,
-      promptTokens: usage.promptTokens,
-      completionTokens: usage.completionTokens,
-      totalTokens: usage.totalTokens,
+      prompt_tokens: usage.promptTokens,
+      completion_tokens: usage.completionTokens,
+      total_tokens: usage.totalTokens,
+      cache_hit_tokens: usage.cacheHitTokens,
+      cache_miss_tokens: usage.cacheMissTokens,
     });
+    if (usageError) {
+      console.error("⚠️ COULD NOT LOG USAGE EVENT:", usageError.message);
+    }
 
     // Small/free-tier models occasionally loop on themselves and repeat
     // a sentence or question 2-3 times in one reply — collapse those

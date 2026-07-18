@@ -5,6 +5,21 @@ import { Send, User, Loader2, Plus, FileText } from "lucide-react";
 
 const STORAGE_KEY_PREFIX = "hireflow_chat_";
 
+// How long to wait after a message before actually calling the AI —
+// catches someone firing off 2-3 quick follow-up messages and combines
+// them into a single AI call/reply instead of racing several calls.
+// Long enough to catch a genuine follow-up thought, short enough that a
+// candidate who sends one message and waits isn't left staring at
+// nothing before Nova even starts "typing."
+const DEBOUNCE_MS = 3000;
+
+// Once the AI reply is actually ready, hold it behind the typing
+// indicator for at least this long. Replies that come back near-
+// instantly (cache hit, short reply) otherwise feel jarring/robotic —
+// this floors the perceived response time without adding real latency
+// to slower replies (it only ever adds the remaining gap, never doubles up).
+const MIN_TYPING_MS = 1200;
+
 export default function CandidateChatUI({ job, source }: { job: any; source?: string }) {
   const [inputText, setInputText] = useState("");
   const [isLoading, setIsLoading] = useState(false);
@@ -20,6 +35,7 @@ export default function CandidateChatUI({ job, source }: { job: any; source?: st
   const fileInputRef = useRef<HTMLInputElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const storageKey = `${STORAGE_KEY_PREFIX}${job.public_slug}`;
   const companyName = job.profiles?.company_name || "the hiring team";
@@ -63,6 +79,15 @@ export default function CandidateChatUI({ job, source }: { job: any; source?: st
   useEffect(() => {
     scrollRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
   }, [messages, isLoading, interviewSlots, selectedSlot]);
+
+  // Clear any pending debounced send if the candidate navigates away
+  // mid-window — otherwise a stray timer could fire against an unmounted
+  // component.
+  useEffect(() => {
+    return () => {
+      if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
+    };
+  }, []);
 
   // Once the screening chat is done, the recruiter may schedule an
   // interview at any point afterward (they're reviewing async, not live).
@@ -116,23 +141,20 @@ export default function CandidateChatUI({ job, source }: { job: any; source?: st
   const formatSlotTime = (iso: string) =>
     new Date(iso).toLocaleString(undefined, { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
 
-  const handleSend = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!inputText.trim() || isLoading || isDone) return;
-
-    const userMessage = { role: 'user', content: inputText };
-    const newMessages = [...messages, userMessage];
-    setMessages(newMessages);
-    setInputText("");
-    if (textareaRef.current) textareaRef.current.style.height = 'auto';
+  // The actual AI call — only ever fired once the debounce window in
+  // handleSend has gone quiet, using whatever messages have accumulated
+  // by then (could be one message, could be several rapid ones combined
+  // into a single call/reply).
+  const sendToAI = async (allMessages: { role: string; content: string }[]) => {
     setIsLoading(true);
+    const startedAt = Date.now();
 
     try {
       const response = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          messages: newMessages,
+          messages: allMessages,
           jobContext: job,
           candidateId,
           source,
@@ -146,6 +168,13 @@ export default function CandidateChatUI({ job, source }: { job: any; source?: st
       if (data.usage) {
         console.log("🔢 TOKEN USAGE (chat):", data.usage);
       }
+
+      // Floor the perceived response time so a fast/cached reply doesn't
+      // feel like it fired instantly — never adds delay beyond what's
+      // already elapsed, only tops it up to the minimum.
+      const elapsed = Date.now() - startedAt;
+      const remaining = MIN_TYPING_MS - elapsed;
+      if (remaining > 0) await new Promise((resolve) => setTimeout(resolve, remaining));
 
       if (data.candidateId && data.candidateId !== candidateId) {
         setCandidateId(data.candidateId);
@@ -161,6 +190,32 @@ export default function CandidateChatUI({ job, source }: { job: any; source?: st
     } finally {
       setIsLoading(false);
     }
+  };
+
+  const handleSend = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!inputText.trim() || isLoading || isDone) return;
+
+    const userMessage = { role: 'user', content: inputText };
+    setMessages(prev => [...prev, userMessage]);
+    setInputText("");
+    if (textareaRef.current) textareaRef.current.style.height = 'auto';
+
+    // Debounce: don't call the AI immediately. If another message comes
+    // in before the window closes, this timer resets and both messages
+    // go out together in one call once things go quiet — catches
+    // rapid-fire typing without ever dropping or racing a message.
+    if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
+    debounceTimerRef.current = setTimeout(() => {
+      debounceTimerRef.current = null;
+      // Read the latest messages via the functional updater rather than
+      // the closed-over `messages` value, which could be stale if more
+      // than one message queued up during the window.
+      setMessages(current => {
+        sendToAI(current);
+        return current;
+      });
+    }, DEBOUNCE_MS);
   };
 
   const handleCvSelected = async (e: React.ChangeEvent<HTMLInputElement>) => {
