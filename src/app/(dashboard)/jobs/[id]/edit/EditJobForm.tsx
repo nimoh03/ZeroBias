@@ -45,10 +45,6 @@ export default function EditJobForm({
   const hasExistingSlots = (initialData.interviewSlots?.length ?? 0) > 0;
   const hasExistingAction = !!initialData.finalAction;
   const [scheduleInterview, setScheduleInterview] = useState(initialData.scheduleInterview ?? (hasExistingSlots || hasExistingAction));
-  const [schedulingType, setSchedulingType] = useState<'single_link' | 'multiple_links' | 'time_slots'>(hasExistingSlots ? 'time_slots' : 'single_link');
-  const [singleLink, setSingleLink] = useState(hasExistingSlots ? "" : initialData.finalAction || "");
-  const [multipleLinks, setMultipleLinks] = useState<string[]>([]);
-  const [multipleLinksInput, setMultipleLinksInput] = useState("");
   const [interviewSlots, setInterviewSlots] = useState<SlotRow[]>(initialData.interviewSlots || []);
 
   const [requestCv, setRequestCv] = useState(initialData.requestCv);
@@ -78,7 +74,7 @@ export default function EditJobForm({
     setFormData(prev => ({ ...prev, [e.target.name]: e.target.value }));
   };
 
-  const handleAddTag = (e: KeyboardEvent<HTMLInputElement>, type: 'must' | 'nice' | 'link') => {
+  const handleAddTag = (e: KeyboardEvent<HTMLInputElement>, type: 'must' | 'nice') => {
     if (e.key === 'Enter') {
       e.preventDefault();
       if (type === 'must' && mustHaveInput.trim()) {
@@ -87,17 +83,13 @@ export default function EditJobForm({
       } else if (type === 'nice' && niceToHaveInput.trim()) {
         setNiceToHaves(prev => [...prev, niceToHaveInput.trim()]);
         setNiceToHaveInput("");
-      } else if (type === 'link' && multipleLinksInput.trim()) {
-        setMultipleLinks(prev => [...prev, multipleLinksInput.trim()]);
-        setMultipleLinksInput("");
       }
     }
   };
 
-  const removeTag = (index: number, type: 'must' | 'nice' | 'link') => {
+  const removeTag = (index: number, type: 'must' | 'nice') => {
     if (type === 'must') setMustHaves(prev => prev.filter((_, i) => i !== index));
     else if (type === 'nice') setNiceToHaves(prev => prev.filter((_, i) => i !== index));
-    else if (type === 'link') setMultipleLinks(prev => prev.filter((_, i) => i !== index));
   };
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -110,14 +102,10 @@ export default function EditJobForm({
     let computedFinalAction = "";
     let computedInterviewSlots: SlotRow[] = [];
     if (scheduleInterview) {
-      if (schedulingType === 'single_link') computedFinalAction = singleLink;
-      else if (schedulingType === 'multiple_links') computedFinalAction = `Please choose one of the following interview links:\n${multipleLinks.map(l => `- ${l}`).join('\n')}`;
-      else if (schedulingType === 'time_slots') {
-        computedInterviewSlots = interviewSlots;
-        if (computedInterviewSlots.length === 0) {
-          alert("Add at least one interview time and a meeting link, or switch to Single Link.");
-          return;
-        }
+      computedInterviewSlots = interviewSlots;
+      if (computedInterviewSlots.length === 0) {
+        alert("Add at least one interview time and a meeting link.");
+        return;
       }
     }
 
@@ -315,58 +303,12 @@ export default function EditJobForm({
               <p><strong>Note:</strong> Nova will not schedule interviews. You will need to manually reach out to qualified candidates yourself to coordinate the next steps.</p>
             </div>
           ) : (
-            <div className="p-5 bg-slate-50 border border-slate-200 rounded-xl space-y-5 animate-in fade-in slide-in-from-top-2">
-              <div className="flex flex-wrap gap-4">
-                <label className="flex items-center gap-2 text-sm font-medium cursor-pointer">
-                  <input type="radio" className="text-primary focus:ring-primary" checked={schedulingType === 'single_link'} onChange={() => setSchedulingType('single_link')} /> Single Link
-                </label>
-                <label className="flex items-center gap-2 text-sm font-medium cursor-pointer">
-                  <input type="radio" className="text-primary focus:ring-primary" checked={schedulingType === 'multiple_links'} onChange={() => setSchedulingType('multiple_links')} /> Multiple Links
-                </label>
-                <label className="flex items-center gap-2 text-sm font-medium cursor-pointer">
-                  <input type="radio" className="text-primary focus:ring-primary" checked={schedulingType === 'time_slots'} onChange={() => setSchedulingType('time_slots')} /> Specific Times
-                </label>
+            <div className="p-5 bg-slate-50 border border-slate-200 rounded-xl space-y-4 animate-in fade-in slide-in-from-top-2">
+              <div>
+                <p className="text-sm font-bold text-slate-900">Schedule</p>
+                <p className="text-xs text-slate-500 mt-0.5">Set real dates and times — Nova will let each qualified candidate pick whichever one works for them, right in the chat.</p>
               </div>
-
-              {schedulingType === 'single_link' && (
-                <div className="animate-in fade-in">
-                  <input
-                    value={singleLink}
-                    onChange={(e) => setSingleLink(e.target.value)}
-                    placeholder="e.g. Please book a time here: https://calendly.com/you/interview"
-                    className="w-full bg-white border border-slate-200 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all"
-                  />
-                </div>
-              )}
-
-              {schedulingType === 'multiple_links' && (
-                <div className="animate-in fade-in space-y-2">
-                  <p className="text-xs text-slate-500">Add options (e.g. "Tech Interview: link1" or "Cultural Fit: link2"). Press Enter to add.</p>
-                  <div className="bg-white border border-slate-200 rounded-xl p-2 flex flex-wrap gap-2 focus-within:ring-2 focus-within:ring-primary/20 focus-within:border-primary transition-all">
-                    {multipleLinks.map((tag, index) => (
-                      <div key={index} className="bg-slate-100 border border-slate-200 text-slate-800 text-sm font-medium px-3 py-1.5 rounded-lg flex items-center gap-2">
-                        {tag}
-                        <button type="button" onClick={() => removeTag(index, 'link')} className="text-slate-400 hover:text-red-500 transition-colors"><X size={14} /></button>
-                      </div>
-                    ))}
-                    <input 
-                      type="text" 
-                      value={multipleLinksInput}
-                      onChange={e => setMultipleLinksInput(e.target.value)}
-                      onKeyDown={e => handleAddTag(e, 'link')}
-                      placeholder="Add a link and press Enter..." 
-                      className="flex-1 min-w-[200px] bg-transparent border-none outline-none px-2 py-1.5 text-sm text-slate-900 placeholder:text-slate-400"
-                    />
-                  </div>
-                </div>
-              )}
-
-              {schedulingType === 'time_slots' && (
-                <div className="animate-in fade-in">
-                  <p className="text-xs text-slate-500 mb-3">Set real dates and times — Nova will let each qualified candidate pick whichever one works for them, right in the chat.</p>
-                  <InterviewSlotsEditor initialSlots={initialData.interviewSlots} onChange={setInterviewSlots} />
-                </div>
-              )}
+              <InterviewSlotsEditor initialSlots={initialData.interviewSlots} onChange={setInterviewSlots} />
             </div>
           )}
 
