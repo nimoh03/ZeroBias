@@ -2,7 +2,7 @@
 
 import { useState, useTransition, KeyboardEvent } from "react";
 import Link from "next/link";
-import { ArrowLeft, Sparkles, Briefcase, Target, CheckCircle2, Loader2, X, FileText, Gauge, MessageSquareText, ListChecks, Calendar } from "lucide-react";
+import { ArrowLeft, Sparkles, Briefcase, Target, CheckCircle2, Loader2, X, FileText, Gauge, MessageSquareText, ListChecks, Calendar, AlertTriangle } from "lucide-react";
 import { createJobAction } from "./action";
 import ConversationalBuilder from "./ConversationalBuilder";
 
@@ -16,21 +16,26 @@ export default function NewJobPage() {
     location: "",
     jobType: "Full-time",
     description: "",
-    finalAction: "",
   });
 
+  // Scheduling States
   const [scheduleInterview, setScheduleInterview] = useState(false);
+  const [schedulingType, setSchedulingType] = useState<'single_link' | 'multiple_links' | 'time_slots'>('single_link');
+  const [singleLink, setSingleLink] = useState("");
+  const [multipleLinks, setMultipleLinks] = useState<string[]>([]);
+  const [multipleLinksInput, setMultipleLinksInput] = useState("");
+  const [timeSlots, setTimeSlots] = useState<string[]>([]);
+  const [timeSlotInput, setTimeSlotInput] = useState("");
+
   const [requestCv, setRequestCv] = useState(false);
   const [screeningRigor, setScreeningRigor] = useState<"thorough" | "trusting">("thorough");
 
-  // Premium List States (Arrays instead of strings)
+  // Premium List States
   const [mustHaves, setMustHaves] = useState<string[]>([]);
   const [mustHaveInput, setMustHaveInput] = useState("");
-  
   const [niceToHaves, setNiceToHaves] = useState<string[]>([]);
   const [niceToHaveInput, setNiceToHaveInput] = useState("");
 
-  // Autofill modal
   const [showAutofill, setShowAutofill] = useState(false);
   const [autofillText, setAutofillText] = useState("");
   const [isAutofilling, setIsAutofilling] = useState(false);
@@ -40,41 +45,51 @@ export default function NewJobPage() {
     setFormData(prev => ({ ...prev, [e.target.name]: e.target.value }));
   };
 
-  const handleAddTag = (e: KeyboardEvent<HTMLInputElement>, type: 'must' | 'nice') => {
+  const handleAddTag = (e: KeyboardEvent<HTMLInputElement>, type: 'must' | 'nice' | 'link' | 'slot') => {
     if (e.key === 'Enter') {
       e.preventDefault(); 
-      
       if (type === 'must' && mustHaveInput.trim()) {
         setMustHaves(prev => [...prev, mustHaveInput.trim()]);
         setMustHaveInput("");
       } else if (type === 'nice' && niceToHaveInput.trim()) {
         setNiceToHaves(prev => [...prev, niceToHaveInput.trim()]);
         setNiceToHaveInput("");
+      } else if (type === 'link' && multipleLinksInput.trim()) {
+        setMultipleLinks(prev => [...prev, multipleLinksInput.trim()]);
+        setMultipleLinksInput("");
+      } else if (type === 'slot' && timeSlotInput.trim()) {
+        setTimeSlots(prev => [...prev, timeSlotInput.trim()]);
+        setTimeSlotInput("");
       }
     }
   };
 
-  const removeTag = (index: number, type: 'must' | 'nice') => {
-    if (type === 'must') {
-      setMustHaves(prev => prev.filter((_, i) => i !== index));
-    } else {
-      setNiceToHaves(prev => prev.filter((_, i) => i !== index));
-    }
+  const removeTag = (index: number, type: 'must' | 'nice' | 'link' | 'slot') => {
+    if (type === 'must') setMustHaves(prev => prev.filter((_, i) => i !== index));
+    else if (type === 'nice') setNiceToHaves(prev => prev.filter((_, i) => i !== index));
+    else if (type === 'link') setMultipleLinks(prev => prev.filter((_, i) => i !== index));
+    else if (type === 'slot') setTimeSlots(prev => prev.filter((_, i) => i !== index));
   };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    
     if (mustHaves.length === 0) {
       alert("Please add at least one Absolute Dealbreaker.");
       return;
+    }
+
+    let computedFinalAction = "";
+    if (scheduleInterview) {
+      if (schedulingType === 'single_link') computedFinalAction = singleLink;
+      else if (schedulingType === 'multiple_links') computedFinalAction = `Please choose one of the following interview links:\n${multipleLinks.map(l => `- ${l}`).join('\n')}`;
+      else if (schedulingType === 'time_slots') computedFinalAction = `Please let me know which of these times works best for you:\n${timeSlots.map(t => `- ${t}`).join('\n')}`;
     }
 
     startTransition(async () => {
       try {
         const payload = {
           ...formData,
-          finalAction: scheduleInterview ? formData.finalAction : "",
+          finalAction: computedFinalAction,
           scheduleInterview,
           mustHaves: mustHaves.map(item => `- ${item}`).join('\n'),
           niceToHaves: niceToHaves.map(item => `- ${item}`).join('\n'),
@@ -247,7 +262,6 @@ export default function NewJobPage() {
 
           <div className="space-y-2">
             <label className="text-sm font-bold text-slate-700">Candidate-Facing Summary</label>
-            <p className="text-xs text-slate-500 mb-2">If the candidate asks "What is this role?", the AI will reply with this.</p>
             <textarea required name="description" value={formData.description} onChange={handleChange} rows={3} placeholder="We are looking for a developer to build modern web interfaces..." className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3.5 text-sm focus:bg-white focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all resize-none" />
           </div>
         </div>
@@ -264,7 +278,6 @@ export default function NewJobPage() {
               <label className="text-sm font-bold text-slate-700 flex items-center gap-2">
                 Absolute Dealbreakers <span className="bg-red-100 text-red-600 text-[10px] px-2 py-0.5 rounded-full uppercase tracking-wider">Must Have</span>
               </label>
-              <p className="text-xs text-slate-500 mb-2">If they fail any of these, the AI rejects them. Type a requirement and hit Enter.</p>
               
               <div className="bg-slate-50 border border-slate-200 rounded-xl p-2 flex flex-wrap gap-2 focus-within:bg-white focus-within:ring-2 focus-within:ring-red-500/20 focus-within:border-red-500 transition-all">
                 {mustHaves.map((tag, index) => (
@@ -290,7 +303,6 @@ export default function NewJobPage() {
               <label className="text-sm font-bold text-slate-700 flex items-center gap-2">
                 Nice-to-Haves <span className="bg-blue-100 text-primary text-[10px] px-2 py-0.5 rounded-full uppercase tracking-wider">Bonus</span>
               </label>
-              <p className="text-xs text-slate-500 mb-2">The AI will probe for these to boost scores, but won't reject if they are missing.</p>
               
               <div className="bg-slate-50 border border-slate-200 rounded-xl p-2 flex flex-wrap gap-2 focus-within:bg-white focus-within:ring-2 focus-within:ring-primary/20 focus-within:border-primary transition-all">
                 {niceToHaves.map((tag, index) => (
@@ -321,34 +333,94 @@ export default function NewJobPage() {
             <h2 className="text-lg md:text-xl font-bold text-slate-900">3. What happens when they qualify?</h2>
           </div>
 
-          <div className="flex items-start justify-between gap-4 mb-6">
+          <div className="flex items-start justify-between gap-4 mb-4">
             <div className="flex gap-3 items-start">
               <div className="bg-slate-100 p-2 rounded-lg text-slate-600 shrink-0"><Calendar size={18} /></div>
               <div>
                 <p className="text-sm font-bold text-slate-900">Enable AI Interview Scheduling</p>
-                <p className="text-xs text-slate-500 mt-1">If enabled, Nova will provide qualified candidates with your scheduling link. If disabled, Nova will just inform them the team will review their application.</p>
+                <p className="text-xs text-slate-500 mt-1">If enabled, Nova will handle handing over the scheduling links or time slots.</p>
               </div>
             </div>
             <label className="relative inline-flex items-center cursor-pointer shrink-0 mt-1">
-              <input
-                type="checkbox"
-                className="sr-only peer"
-                checked={scheduleInterview}
-                onChange={() => setScheduleInterview(!scheduleInterview)}
-              />
+              <input type="checkbox" className="sr-only peer" checked={scheduleInterview} onChange={() => setScheduleInterview(!scheduleInterview)} />
               <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary"></div>
             </label>
           </div>
 
-          {scheduleInterview && (
-            <div className="animate-in fade-in slide-in-from-top-2">
-              <input
-                name="finalAction"
-                value={formData.finalAction}
-                onChange={handleChange}
-                placeholder="e.g. Please book a time here: https://calendly.com/you/interview"
-                className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3.5 text-sm focus:bg-white focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all"
-              />
+          {/* Conditional Scheduling Configuration */}
+          {!scheduleInterview ? (
+            <div className="p-4 bg-amber-50 border border-amber-200 text-amber-800 rounded-xl text-sm flex gap-3 items-start animate-in fade-in">
+              <AlertTriangle size={18} className="mt-0.5 shrink-0" />
+              <p><strong>Note:</strong> Nova will not schedule interviews. You will need to manually reach out to qualified candidates yourself to coordinate the next steps.</p>
+            </div>
+          ) : (
+            <div className="p-5 bg-slate-50 border border-slate-200 rounded-xl space-y-5 animate-in fade-in slide-in-from-top-2">
+              <div className="flex flex-wrap gap-4">
+                <label className="flex items-center gap-2 text-sm font-medium cursor-pointer">
+                  <input type="radio" className="text-primary focus:ring-primary" checked={schedulingType === 'single_link'} onChange={() => setSchedulingType('single_link')} /> Single Link
+                </label>
+                <label className="flex items-center gap-2 text-sm font-medium cursor-pointer">
+                  <input type="radio" className="text-primary focus:ring-primary" checked={schedulingType === 'multiple_links'} onChange={() => setSchedulingType('multiple_links')} /> Multiple Links
+                </label>
+                <label className="flex items-center gap-2 text-sm font-medium cursor-pointer">
+                  <input type="radio" className="text-primary focus:ring-primary" checked={schedulingType === 'time_slots'} onChange={() => setSchedulingType('time_slots')} /> Specific Times
+                </label>
+              </div>
+
+              {schedulingType === 'single_link' && (
+                <div className="animate-in fade-in">
+                  <input
+                    value={singleLink}
+                    onChange={(e) => setSingleLink(e.target.value)}
+                    placeholder="e.g. Please book a time here: https://calendly.com/you/interview"
+                    className="w-full bg-white border border-slate-200 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all"
+                  />
+                </div>
+              )}
+
+              {schedulingType === 'multiple_links' && (
+                <div className="animate-in fade-in space-y-2">
+                  <p className="text-xs text-slate-500">Add options (e.g. "Tech Interview: link1" or "Cultural Fit: link2"). Press Enter to add.</p>
+                  <div className="bg-white border border-slate-200 rounded-xl p-2 flex flex-wrap gap-2 focus-within:ring-2 focus-within:ring-primary/20 focus-within:border-primary transition-all">
+                    {multipleLinks.map((tag, index) => (
+                      <div key={index} className="bg-slate-100 border border-slate-200 text-slate-800 text-sm font-medium px-3 py-1.5 rounded-lg flex items-center gap-2">
+                        {tag}
+                        <button type="button" onClick={() => removeTag(index, 'link')} className="text-slate-400 hover:text-red-500 transition-colors"><X size={14} /></button>
+                      </div>
+                    ))}
+                    <input 
+                      type="text" 
+                      value={multipleLinksInput}
+                      onChange={e => setMultipleLinksInput(e.target.value)}
+                      onKeyDown={e => handleAddTag(e, 'link')}
+                      placeholder="Add a link and press Enter..." 
+                      className="flex-1 min-w-[200px] bg-transparent border-none outline-none px-2 py-1.5 text-sm text-slate-900 placeholder:text-slate-400"
+                    />
+                  </div>
+                </div>
+              )}
+
+              {schedulingType === 'time_slots' && (
+                <div className="animate-in fade-in space-y-2">
+                  <p className="text-xs text-slate-500">Provide specific dates and times (e.g. "Oct 12 at 2:00 PM"). Press Enter to add.</p>
+                  <div className="bg-white border border-slate-200 rounded-xl p-2 flex flex-wrap gap-2 focus-within:ring-2 focus-within:ring-primary/20 focus-within:border-primary transition-all">
+                    {timeSlots.map((tag, index) => (
+                      <div key={index} className="bg-slate-100 border border-slate-200 text-slate-800 text-sm font-medium px-3 py-1.5 rounded-lg flex items-center gap-2">
+                        {tag}
+                        <button type="button" onClick={() => removeTag(index, 'slot')} className="text-slate-400 hover:text-red-500 transition-colors"><X size={14} /></button>
+                      </div>
+                    ))}
+                    <input 
+                      type="text" 
+                      value={timeSlotInput}
+                      onChange={e => setTimeSlotInput(e.target.value)}
+                      onKeyDown={e => handleAddTag(e, 'slot')}
+                      placeholder="Add a time slot and press Enter..." 
+                      className="flex-1 min-w-[200px] bg-transparent border-none outline-none px-2 py-1.5 text-sm text-slate-900 placeholder:text-slate-400"
+                    />
+                  </div>
+                </div>
+              )}
             </div>
           )}
 
@@ -357,53 +429,14 @@ export default function NewJobPage() {
               <div className="bg-slate-100 p-2 rounded-lg text-slate-600 shrink-0"><FileText size={18} /></div>
               <div>
                 <p className="text-sm font-bold text-slate-900">Ask for a CV during screening</p>
-                <p className="text-xs text-slate-500 mt-1">When a candidate claims a qualification, Nova will ask them to attach their CV to verify it, skipping questions the CV already answers.</p>
               </div>
             </div>
             <label className="relative inline-flex items-center cursor-pointer shrink-0">
-              <input
-                type="checkbox"
-                className="sr-only peer"
-                checked={requestCv}
-                onChange={() => setRequestCv(!requestCv)}
-              />
+              <input type="checkbox" className="sr-only peer" checked={requestCv} onChange={() => setRequestCv(!requestCv)} />
               <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary"></div>
             </label>
           </div>
 
-          <div className="mt-6 pt-6 border-t border-slate-100">
-            <div className="flex gap-3 items-start mb-4">
-              <div className="bg-slate-100 p-2 rounded-lg text-slate-600 shrink-0"><Gauge size={18} /></div>
-              <div>
-                <p className="text-sm font-bold text-slate-900">Screening style</p>
-                <p className="text-xs text-slate-500 mt-1">How hard should Nova push before accepting a claim?</p>
-              </div>
-            </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <button
-                type="button"
-                onClick={() => setScreeningRigor("thorough")}
-                className={`text-left p-4 rounded-xl border-2 transition-all ${screeningRigor === "thorough" ? 'border-primary bg-blue-50/50' : 'border-slate-200 hover:border-slate-300'}`}
-              >
-                <div className="flex items-center justify-between mb-1">
-                  <p className="text-sm font-bold text-slate-900">Thorough</p>
-                  {screeningRigor === "thorough" && <CheckCircle2 className="text-primary" size={16} />}
-                </div>
-                <p className="text-xs text-slate-500">Nova asks for one concrete specific before accepting a skill or dealbreaker claim.</p>
-              </button>
-              <button
-                type="button"
-                onClick={() => setScreeningRigor("trusting")}
-                className={`text-left p-4 rounded-xl border-2 transition-all ${screeningRigor === "trusting" ? 'border-primary bg-blue-50/50' : 'border-slate-200 hover:border-slate-300'}`}
-              >
-                <div className="flex items-center justify-between mb-1">
-                  <p className="text-sm font-bold text-slate-900">Trusting</p>
-                  {screeningRigor === "trusting" && <CheckCircle2 className="text-primary" size={16} />}
-                </div>
-                <p className="text-xs text-slate-500">Nova takes a clear, direct answer at face value and moves on.</p>
-              </button>
-            </div>
-          </div>
         </div>
 
         {/* Submit Actions */}
