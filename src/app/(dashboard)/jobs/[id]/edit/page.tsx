@@ -40,6 +40,8 @@ export default async function EditJobPage({ params }: { params: Promise<{ id: st
         jobType: job.job_type || "Full-time",
         description: job.description || "",
         finalAction: job.final_action || "",
+        interviewSlots: (job.interview_slots_template || []).map((s: { time: string; link: string }) => ({ time: s.time, link: s.link })),
+        status: job.status === "paused" ? "paused" : "active",
         requestCv: !!job.request_cv,
         screeningRigor: job.screening_rigor === "trusting" ? "trusting" : "thorough",
         mustHaves: parseTags(job.must_haves),

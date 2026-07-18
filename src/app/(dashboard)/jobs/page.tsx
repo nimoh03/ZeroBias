@@ -5,6 +5,7 @@ import {
   MapPin, Briefcase, Pencil, FolderOpen, Users
 } from "lucide-react";
 import CopyLinkButton from "@/components/CopyLinkButton";
+import JobStatusToggle from "./JobStatusToggle";
 
 export default async function JobsPage() {
   const supabase = await createClient();
@@ -57,7 +58,7 @@ export default async function JobsPage() {
           {jobs.map((job) => (
             <div 
               key={job.id} 
-              className="bg-white border border-slate-200 rounded-2xl p-5 md:p-6 shadow-sm hover:shadow-md transition-shadow flex flex-col md:flex-row md:items-center justify-between gap-6 group"
+              className={`bg-white border rounded-2xl p-5 md:p-6 shadow-sm hover:shadow-md transition-shadow flex flex-col md:flex-row md:items-center justify-between gap-6 group ${job.status === "paused" ? "border-amber-200 bg-amber-50/30" : "border-slate-200"}`}
             >
               {/* Job Info — wrapped in a Link so clicking the job jumps
                   straight to its filtered candidate pipeline. Only this
@@ -73,8 +74,11 @@ export default async function JobsPage() {
                   <Briefcase size={22} strokeWidth={2.5} />
                 </div>
                 <div>
-                  <h3 className="text-lg font-bold text-slate-900 group-hover:text-primary transition-colors">
+                  <h3 className="text-lg font-bold text-slate-900 group-hover:text-primary transition-colors flex items-center gap-2">
                     {job.title}
+                    {job.status === "paused" && (
+                      <span className="text-[10px] font-bold uppercase tracking-wider bg-amber-100 text-amber-700 px-2 py-0.5 rounded-md">Paused</span>
+                    )}
                   </h3>
                   <div className="flex flex-wrap items-center gap-3 mt-1.5">
                     <span className="flex items-center gap-1.5 text-xs font-medium text-slate-500">
@@ -97,6 +101,8 @@ export default async function JobsPage() {
                 
                 {/* REAL COPY LINK BUTTON INJECTED HERE */}
                 <CopyLinkButton slug={job.public_slug} />
+
+                <JobStatusToggle jobId={job.id} status={job.status === "paused" ? "paused" : "active"} />
                 
                 <Link 
                   href={`/jobs/${job.id}/edit`}

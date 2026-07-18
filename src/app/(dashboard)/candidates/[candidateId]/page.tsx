@@ -1,13 +1,12 @@
 import {
   ArrowLeft, CheckCircle2, XCircle, UserCheck,
-  Sparkles, ThumbsUp, AlertTriangle, Clock
+  Sparkles, ThumbsUp, AlertTriangle
 } from 'lucide-react';
 import Link from 'next/link';
 import { Suspense } from 'react';
 import { notFound } from 'next/navigation';
 import { createClient } from '@/utils/supabase/server';
-import { updateCandidateStatus, resetIfInterviewExpired } from './action';
-import InterviewScheduler from './InterviewScheduler';
+import { updateCandidateStatus } from './action';
 import TranscriptPanel from './TranscriptPanel';
 import JobMatchesPanel from './JobMatchesPanel';
 import { SkeletonBlock } from '@/components/Skeleton';
@@ -18,34 +17,6 @@ const statusLabel: Record<string, string> = {
   rejected: 'Not a Match',
   needs_review: 'Needs Human Review',
 };
-
-function InterviewStatusBadge({ time }: { time: string }) {
-  const diffMs = new Date(time).getTime() - Date.now();
-  const hours = Math.abs(diffMs) / (1000 * 60 * 60);
-
-  let label: string;
-  let classes: string;
-  if (diffMs < 0) {
-    label = 'Interview time has passed';
-    classes = 'bg-orange-100 text-orange-700';
-  } else if (hours <= 3) {
-    label = 'Interview coming up soon';
-    classes = 'bg-red-100 text-red-700';
-  } else if (hours <= 24) {
-    label = 'Interview within 24 hours';
-    classes = 'bg-blue-50 text-primary';
-  } else {
-    label = 'Interview scheduled';
-    classes = 'bg-surface-container-high text-on-surface-variant';
-  }
-
-  return (
-    <div className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold ${classes}`}>
-      <Clock size={14} />
-      {label} — {new Date(time).toLocaleString(undefined, { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}
-    </div>
-  );
-}
 
 function TranscriptPanelSkeleton() {
   return (
@@ -81,13 +52,6 @@ export default async function CandidateDetail({ params }: { params: Promise<{ ca
   if (error || !candidate) {
     console.error('🔥 CANDIDATE NOT FOUND:', error?.message);
     return notFound();
-  }
-
-  const wasReset = await resetIfInterviewExpired(candidateId, candidate.selected_slot || null);
-  if (wasReset) {
-    candidate.selected_slot = null;
-    candidate.interview_slots = [];
-    candidate.interview_scheduled_at = null;
   }
 
   const initials = candidate.name
@@ -193,7 +157,7 @@ export default async function CandidateDetail({ params }: { params: Promise<{ ca
                 type="submit"
                 className="w-full py-3 bg-primary text-on-primary rounded-xl text-sm font-bold hover:opacity-90 transition-all shadow-sm flex items-center justify-center gap-2 active:scale-95"
               >
-                <CheckCircle2 size={18} /> Proceed to Interview
+                <CheckCircle2 size={18} /> Mark Qualified
               </button>
             </form>
             <form action={async () => { "use server"; await updateCandidateStatus(candidateId, "needs_review"); }}>
@@ -213,19 +177,6 @@ export default async function CandidateDetail({ params }: { params: Promise<{ ca
               </button>
             </form>
           </div>
-
-          {candidate.status === 'qualified' && (
-            <>
-              {candidate.selected_slot && (
-                <InterviewStatusBadge time={candidate.selected_slot.time} />
-              )}
-              <InterviewScheduler
-                candidateId={candidateId}
-                existingSlots={candidate.interview_slots || []}
-                selectedSlot={candidate.selected_slot || null}
-              />
-            </>
-          )}
 
           {showJobMatches && (
             <Suspense fallback={<JobMatchesSkeleton />}>
@@ -252,4 +203,4 @@ export default async function CandidateDetail({ params }: { params: Promise<{ ca
       </div>
     </div>
   );
-}
+}5

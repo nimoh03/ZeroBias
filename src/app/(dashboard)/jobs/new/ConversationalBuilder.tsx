@@ -1,8 +1,9 @@
 "use client";
 
 import { useState, useTransition, KeyboardEvent, useRef, useEffect } from "react";
-import { Sparkles, Loader2, X, ArrowRight, ArrowLeft as ArrowLeftIcon, CheckCircle2, FileText, Brain, Send } from "lucide-react";
+import { Sparkles, Loader2, X, ArrowRight, ArrowLeft as ArrowLeftIcon, CheckCircle2, FileText, Brain, Send, Calendar } from "lucide-react";
 import { createJobAction } from "./action";
+import InterviewSlotsEditor, { type SlotRow } from "@/components/InterviewSlotsEditor";
 
 type Requirement = { text: string; excusable: boolean };
 
@@ -26,6 +27,8 @@ export default function ConversationalBuilder() {
 
   // Step 3: final phase
   const [finalAction, setFinalAction] = useState("");
+  const [scheduleInterview, setScheduleInterview] = useState(false);
+  const [interviewSlots, setInterviewSlots] = useState<SlotRow[]>([]);
   const [requestCv, setRequestCv] = useState(false);
   const [screeningRigor, setScreeningRigor] = useState<"thorough" | "trusting">("thorough");
 
@@ -96,6 +99,10 @@ export default function ConversationalBuilder() {
       alert("At least one requirement needs to stay a dealbreaker. Mark fewer items as excusable, or go back and add more.");
       return;
     }
+    if (scheduleInterview && interviewSlots.length === 0) {
+      alert("Add at least one interview time and a meeting link, or turn off interview scheduling.");
+      return;
+    }
 
     startTransition(async () => {
       try {
@@ -106,7 +113,8 @@ export default function ConversationalBuilder() {
           description: description || `We're hiring a ${title} in ${location}.`,
           mustHaves: mustHaves.map(item => `- ${item}`).join("\n"),
           niceToHaves: niceToHaves.map(item => `- ${item}`).join("\n"),
-          finalAction,
+          finalAction: scheduleInterview ? "" : finalAction,
+          interviewSlots: scheduleInterview ? interviewSlots : [],
           requestCv,
           screeningRigor,
         };
@@ -274,15 +282,37 @@ export default function ConversationalBuilder() {
             <div className="bg-emerald-50 p-2 rounded-lg text-emerald-600"><CheckCircle2 size={20} /></div>
             <h2 className="text-lg md:text-xl font-bold text-slate-900">What happens when they qualify?</h2>
           </div>
-          <p className="text-xs text-slate-500">
-            Paste a link (Calendly, Google Meet, a WhatsApp group invite) or type plain instructions. Leave blank to just say "we'll be in touch."
-          </p>
-          <input
-            value={finalAction}
-            onChange={e => setFinalAction(e.target.value)}
-            placeholder="e.g. https://calendly.com/you/interview"
-            className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3.5 text-sm focus:bg-white focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all"
-          />
+          <div className="flex items-start justify-between gap-4">
+            <div className="flex gap-3 items-start">
+              <div className="bg-slate-100 p-2 rounded-lg text-slate-600 shrink-0"><Calendar size={18} /></div>
+              <div>
+                <p className="text-sm font-bold text-slate-900">Enable AI Interview Scheduling</p>
+                <p className="text-xs text-slate-500 mt-1">Set real times and Nova offers them to every candidate who qualifies, right in the chat.</p>
+              </div>
+            </div>
+            <label className="relative inline-flex items-center cursor-pointer shrink-0 mt-1">
+              <input type="checkbox" className="sr-only peer" checked={scheduleInterview} onChange={() => setScheduleInterview(!scheduleInterview)} />
+              <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary"></div>
+            </label>
+          </div>
+
+          {scheduleInterview ? (
+            <div className="p-5 bg-slate-50 border border-slate-200 rounded-xl animate-in fade-in slide-in-from-top-2">
+              <InterviewSlotsEditor onChange={setInterviewSlots} />
+            </div>
+          ) : (
+            <div className="space-y-2">
+              <p className="text-xs text-slate-500">
+                Or just paste a link (Calendly, Google Meet, a WhatsApp group invite) or type plain instructions. Leave blank to just say we&apos;ll be in touch.
+              </p>
+              <input
+                value={finalAction}
+                onChange={e => setFinalAction(e.target.value)}
+                placeholder="e.g. https://calendly.com/you/interview"
+                className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3.5 text-sm focus:bg-white focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all"
+              />
+            </div>
+          )}
 
           <div className="flex items-center justify-between gap-4 pt-6 border-t border-slate-100">
             <div className="flex gap-3 items-start">

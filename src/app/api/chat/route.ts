@@ -66,6 +66,12 @@ export async function POST(req: Request) {
       ? `\n\nSCREENING STYLE — Trusting: when the candidate gives a clear, direct answer to a question, take it at their word and move on. Don't demand extra proof or a second example on top of a clean answer — one solid, specific answer to a question is enough. Still ask normal follow-up questions where the conversation naturally calls for one, and still apply the non-answer/vagueness rules above — this only changes how much you push on answers that were already clear and direct.`
       : `\n\nSCREENING STYLE — Thorough: don't take a claim at face value just because it sounds right, but remember this is a pre-interview screen, not the technical interview — you're gathering enough breadth to pass a good candidate forward, not stress-testing them. Before accepting a dealbreaker or skill claim, ask one light, curious follow-up in a casual tone — e.g. "Nice, what are 2-3 projects you've built with React?" or "Got it — any particular one that stands out?" — rather than moving straight on after a general statement. Frame it as genuine interest, not a test: a short "the more specific you can be here, the easier it is for us to shortlist you" is enough to make the reason clear without sounding like an interrogation. This is ONE follow-up per claim, never a second round. If their reply to that single follow-up is still thin or vague, do not push again — accept what you have, quietly note it as a soft spot for your eventual concerns/score, and move on to the next question. A claim never costs the candidate more than one extra question.`;
 
+    const hasSlotTemplate = Array.isArray(jobContext.interview_slots_template) && jobContext.interview_slots_template.length > 0;
+    const schedulingSection = hasSlotTemplate
+      ? `\n\nINTERVIEW SCHEDULING: If you qualify this candidate, a set of real interview times will be shown to them right after this chat (a separate picker, not something you need to list yourself). In your closing message, if you qualify them, add a short line letting them know they'll see interview times to pick from next — do not invent, guess, or state specific dates/times yourself, and do not promise scheduling if you reject them or send them to needs_review.`
+      : "";
+
+
     const systemPrompt = `You are running the pre-interview screening chat for a company hiring a ${jobContext.title} in ${jobContext.location}. You are professional, direct, and efficient — like a sharp recruiting coordinator, not a chatbot. Never refer to yourself as an AI, a bot, or an assistant, and never explain what you are. Just do the job.
 
 ROLE CONTEXT:
@@ -78,6 +84,7 @@ NICE TO HAVES (probe for these to raise the score, never reject solely for lacki
 ${jobContext.nice_to_haves}
 ${cvSection}
 ${rigorSection}
+${schedulingSection}
 
 HOW TO RUN THE CONVERSATION:
 1. Collect the candidate's full name and email address before anything else — you need both to keep a record, even if you don't need email for anything else in the chat. If either is still missing, that is always the next question. The moment you learn or update either value — even mid-conversation, long before a final verdict — you MUST append a ###PROFILE### block (format given at the end of this prompt) after your reply, on every turn from that point until both are known. This is not optional and is just as important as the reply text itself.
@@ -330,17 +337,44 @@ Include this block on every turn from the moment you first learn either value, s
     }
 
     if (decision) {
+      const update: Record<string, unknown> = {
+        status: decision.status,
+        score: decision.score,
+        name: decision.candidate_name,
+        email: decision.candidate_email,
+        summary: decision.summary,
+        strengths: decision.strengths ?? [],
+        concerns: decision.concerns ?? [],
+      };
+
+      // If the recruiter set up default interview times on the job itself,
+      // hand this qualified candidate their own copy the moment they pass
+      // — no manual per-candidate scheduling step needed. Each candidate
+      // gets independently-minted slot ids off the same template, so later
+      // edits to the job's template (or one candidate booking a time)
+      // never mutate another candidate's already-offered list. Only do
+      // this for a fresh qualify — never overwrite slots a recruiter may
+      // have already customized by hand for this candidate.
+      if (decision.status === "qualified" && Array.isArray(jobContext.interview_slots_template) && jobContext.interview_slots_template.length > 0) {
+        const { data: existingCandidate } = await supabase
+          .from("candidates")
+          .select("interview_slots")
+          .eq("id", candidateId)
+          .single();
+
+        const alreadyHasSlots = Array.isArray(existingCandidate?.interview_slots) && existingCandidate.interview_slots.length > 0;
+        if (!alreadyHasSlots) {
+          update.interview_slots = jobContext.interview_slots_template.map((s: { time: string; link: string }) => ({
+            id: crypto.randomUUID(),
+            time: s.time,
+            link: s.link,
+          }));
+        }
+      }
+
       const { error } = await supabase
         .from("candidates")
-        .update({
-          status: decision.status,
-          score: decision.score,
-          name: decision.candidate_name,
-          email: decision.candidate_email,
-          summary: decision.summary,
-          strengths: decision.strengths ?? [],
-          concerns: decision.concerns ?? [],
-        })
+        .update(update)
         .eq("id", candidateId);
       if (error) console.error("🔥 COULD NOT SAVE DECISION:", error.message);
     }

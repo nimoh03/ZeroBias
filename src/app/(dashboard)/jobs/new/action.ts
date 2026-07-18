@@ -12,6 +12,7 @@ export async function createJobAction(data: {
   mustHaves: string;
   niceToHaves: string;
   finalAction: string;
+  interviewSlots?: { time: string; link: string }[];
   requestCv: boolean;
   screeningRigor?: "thorough" | "trusting";
 }) {
@@ -36,6 +37,9 @@ export async function createJobAction(data: {
     must_haves: data.mustHaves,
     nice_to_haves: data.niceToHaves,
     final_action: data.finalAction || null,
+    interview_slots_template: (data.interviewSlots || [])
+      .filter(s => s.time && s.link)
+      .map(s => ({ time: new Date(s.time).toISOString(), link: s.link.trim() })),
     request_cv: !!data.requestCv,
     screening_rigor: data.screeningRigor === "trusting" ? "trusting" : "thorough",
     public_slug: public_slug,
