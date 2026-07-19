@@ -1,6 +1,7 @@
 import { createClient } from "@/utils/supabase/server";
-import { Bell } from "lucide-react";
-import Link from "next/link";
+import { createAdminClient } from "@/utils/supabase/admin";
+import { getMonthlyScreeningStatus } from "@/utils/quota";
+import NotificationBell from "./NotificationBell";
 
 // "Pending" = an interview scheduled and starting within the next 24
 // hours, or overdue by less than the 30-minute grace window used in
@@ -49,6 +50,14 @@ export default async function Header() {
     }).length;
   }
 
+  // Quota status via the admin client, same reasoning as the chat
+  // route's enforcement check — this is a "how many, against what
+  // limit" read that should work reliably regardless of whatever RLS
+  // policies do or don't exist yet on jobs/candidates.
+  const quotaStatus = user?.id
+    ? await getMonthlyScreeningStatus(createAdminClient(), user.id)
+    : { completed: 0, limit: 100, remaining: 100, isOverLimit: false, isNearLimit: false, resetsOn: "" };
+
   return (
     <header className="h-20 px-6 md:px-10 flex items-center justify-between sticky top-0 bg-white/80 backdrop-blur-md z-40 border-b border-slate-100">
       <div className="flex-1 min-w-0 pr-4">
@@ -56,14 +65,7 @@ export default async function Header() {
       </div>
 
       <div className="flex items-center gap-5 shrink-0">
-        <Link href="/candidates" className="relative p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-50 rounded-full transition-colors" title={pendingCount > 0 ? `${pendingCount} interview${pendingCount === 1 ? '' : 's'} coming up` : undefined}>
-          <Bell size={20} />
-          {pendingCount > 0 && (
-            <span className="absolute top-0.5 right-0.5 min-w-[16px] h-4 px-1 bg-red-500 text-white text-[10px] font-bold rounded-full border-2 border-white flex items-center justify-center">
-              {pendingCount}
-            </span>
-          )}
-        </Link>
+        <NotificationBell pendingInterviews={pendingCount} quota={quotaStatus} recruiterId={user?.id ?? "anonymous"} />
 
         <div className="flex items-center gap-3 pl-5 border-l border-slate-200">
           <div className="text-right hidden md:block">

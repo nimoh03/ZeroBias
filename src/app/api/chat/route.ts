@@ -1,6 +1,7 @@
 import { createAdminClient } from "@/utils/supabase/admin";
 import { getAIReply, ChatMessage, dedupeRepeatedSentences, enforceSingleQuestion } from "@/utils/ai";
 import { checkRateLimit, getClientIp } from "@/utils/rateLimit";
+import { getMonthlyScreeningStatus } from "@/utils/quota";
 
 export const maxDuration = 45;
 
@@ -26,6 +27,32 @@ export async function POST(req: Request) {
           { text: "Too many requests from this connection right now — please try again in a bit." },
           { status: 429 }
         );
+      }
+
+      // Quota enforcement — only ever blocks the START of a new
+      // screening, never an in-progress one. jobContext.recruiter_id is
+      // client-supplied and untrusted for a blocking decision, so the
+      // real recruiter_id is re-fetched from the job row itself before
+      // checking their quota.
+      const { data: jobRow } = await supabase
+        .from("jobs")
+        .select("recruiter_id")
+        .eq("id", jobContext.id)
+        .single();
+
+      if (jobRow?.recruiter_id) {
+        const quota = await getMonthlyScreeningStatus(supabase, jobRow.recruiter_id);
+        if (quota.isOverLimit) {
+          // Candidate-facing message deliberately says nothing about
+          // billing/quotas — that's internal. done:true stops the client
+          // from allowing further messages in this conversation (same
+          // mechanism as a normal screening completion).
+          return Response.json({
+            text: "Thanks for your interest — this role isn't currently accepting new applications. Please check back soon.",
+            done: true,
+            status: "closed",
+          });
+        }
       }
 
       const { data: candidate, error: candidateError } = await supabase
