@@ -1,10 +1,42 @@
 import { createAdminClient } from "@/utils/supabase/admin";
-import { extractCvSummaryWithGemini, TokenUsage } from "@/utils/ai";
+import { getAIReply } from "@/utils/ai";
+import { checkRateLimit, getClientIp } from "@/utils/rateLimit";
 
 export const maxDuration = 30;
 
 const ALLOWED_TYPES = ["application/pdf", "application/msword", "application/vnd.openxmlformats-officedocument.wordprocessingml.document"];
 const MAX_SIZE_BYTES = 5 * 1024 * 1024; // 5MB
+
+// Pull raw text out of the uploaded file with a plain parsing library —
+// no AI model involved in this step at all. Almost every real-world
+// resume is text underneath (even when it looks "designed"), so this
+// covers the large majority of uploads without ever needing a vision
+// model or paying for one. Old-format .doc (pre-2007 binary Word) isn't
+// reliably parseable by mammoth (that's a docx-only library) — treated
+// as unsupported for summarization, same as a scanned/image-only PDF:
+// the file still uploads and is still viewable by the recruiter, it
+// just won't get an AI-generated summary.
+async function extractTextFromFile(buffer: Buffer, mimeType: string): Promise<string | null> {
+  try {
+    if (mimeType === "application/pdf") {
+      const pdfParse = (await import("pdf-parse")).default;
+      const result = await pdfParse(buffer);
+      return result.text?.trim() || null;
+    }
+    if (mimeType === "application/vnd.openxmlformats-officedocument.wordprocessingml.document") {
+      const mammoth = await import("mammoth");
+      const result = await mammoth.extractRawText({ buffer });
+      return result.value?.trim() || null;
+    }
+    // application/msword (legacy .doc) — no reliable text extraction
+    // library for this format without shelling out to something heavier
+    // (e.g. LibreOffice). Skip summarization rather than guess.
+    return null;
+  } catch (err) {
+    console.error("⚠️ CV TEXT EXTRACTION FAILED:", (err as Error).message || err);
+    return null;
+  }
+}
 
 export async function POST(req: Request) {
   try {
@@ -25,6 +57,18 @@ export async function POST(req: Request) {
 
     const supabase = createAdminClient();
 
+    // Upload spam guard, keyed per IP — file uploads + an AI summary
+    // call are the most expensive thing this route does, so this is the
+    // one most worth protecting. 10/hour per IP comfortably covers a
+    // real candidate (nobody uploads their CV 10 times), while blocking
+    // a script from repeatedly burning storage + AI cost. Scoped to IP
+    // only, never affects any other candidate or agency.
+    const clientIp = getClientIp(req);
+    const { allowed } = await checkRateLimit(supabase, `upload-cv:${clientIp}`, 3600, 10);
+    if (!allowed) {
+      return Response.json({ error: "Too many uploads from this connection — please try again later." }, { status: 429 });
+    }
+
     const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "_");
     const path = `${candidateId}/${Date.now()}-${safeName}`;
     const fileBuffer = Buffer.from(await file.arrayBuffer());
@@ -41,40 +85,56 @@ export async function POST(req: Request) {
     const { data: publicUrlData } = supabase.storage.from("cvs").getPublicUrl(path);
     const cvUrl = publicUrlData.publicUrl;
 
-    // Try to get a recruiter-facing summary via Gemini — Gemini can read
-    // PDFs natively. This is best-effort: if it's unavailable (no key,
-    // rate limited, or a Word doc it can't parse), we still keep the
-    // upload and just skip the summary. Never block on this.
+    // Try to get a recruiter-facing summary. This is best-effort: if
+    // extraction fails (scanned PDF, legacy .doc) or the AI call fails,
+    // we still keep the upload and just skip the summary. Never block on
+    // this — CV verification is a nice-to-have, not something that
+    // should break the upload itself.
     let cvSummary: string | null = null;
-    let cvUsage: TokenUsage | null = null;
-    if (file.type === "application/pdf") {
+    let cvUsage: import("@/utils/ai").TokenUsage | null = null;
+
+    const extractedText = await extractTextFromFile(fileBuffer, file.type);
+
+    if (extractedText && extractedText.length > 20) {
+      const deepseekKey = process.env.DEEPSEEK_API_KEY;
       const geminiKey = process.env.GEMINI_API_KEY;
 
-      const cvResult = await extractCvSummaryWithGemini({
-        geminiKey,
-        fileBase64: fileBuffer.toString("base64"),
-        mimeType: file.type,
-        prompt: "You are extracting a short recruiter-facing summary from this CV/resume for a pre-interview screening assistant to use as verified context. In under 120 words, plain text, no markdown: list highest education/qualification, total years of relevant experience, key skills/technologies, and most recent role/employer. Be factual and concise — this will be treated as verified fact, so only include what the document actually states.",
-      });
+      const systemPrompt = "You are extracting a short recruiter-facing summary from a CV/resume's raw extracted text, for a pre-interview screening assistant to use as verified context. In under 120 words, plain text, no markdown: list highest education/qualification, total years of relevant experience, key skills/technologies, and most recent role/employer. Be factual and concise — this will be treated as verified fact, so only include what the document actually states. If the extracted text is garbled or clearly not a resume, say so in one short sentence instead of guessing.";
 
-      if (cvResult) {
-        cvSummary = cvResult.text;
-        cvUsage = cvResult.usage;
+      try {
+        const { text, provider, model, usage } = await getAIReply({
+          deepseekKey,
+          geminiKey,
+          messages: [
+            { role: "system", content: systemPrompt },
+            // Raw extracted text can run long for multi-page CVs — cap it
+            // well within context limits rather than trust every upload
+            // to be reasonably sized.
+            { role: "user", content: extractedText.slice(0, 12000) },
+          ],
+          maxTokens: 400,
+        });
+
+        cvSummary = text;
+        cvUsage = usage;
+
         const { error: usageError } = await supabase.from("usage_events").insert({
           source: "cv_extract",
           candidate_id: candidateId,
           recruiter_id: recruiterId,
-          provider: "gemini",
-          model: cvResult.model,
-          prompt_tokens: cvResult.usage.promptTokens,
-          completion_tokens: cvResult.usage.completionTokens,
-          total_tokens: cvResult.usage.totalTokens,
-          cache_hit_tokens: cvResult.usage.cacheHitTokens,
-          cache_miss_tokens: cvResult.usage.cacheMissTokens,
+          provider,
+          model,
+          prompt_tokens: usage.promptTokens,
+          completion_tokens: usage.completionTokens,
+          total_tokens: usage.totalTokens,
+          cache_hit_tokens: usage.cacheHitTokens,
+          cache_miss_tokens: usage.cacheMissTokens,
         });
         if (usageError) {
           console.error("⚠️ COULD NOT LOG USAGE EVENT:", usageError.message);
         }
+      } catch (err) {
+        console.error("⚠️ CV SUMMARY AI CALL FAILED:", (err as Error).message || err);
       }
     }
 

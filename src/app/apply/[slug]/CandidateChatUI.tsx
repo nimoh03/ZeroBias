@@ -161,7 +161,21 @@ export default function CandidateChatUI({ job, source }: { job: any; source?: st
         }),
       });
 
-      if (!response.ok) throw new Error("Failed to fetch");
+      if (!response.ok) {
+        // Rate-limit (429) and other handled error responses still come
+        // back with a real, candidate-friendly `text` — show that
+        // instead of the generic fallback, which would otherwise make a
+        // deliberate "slow down" message look like a broken connection.
+        const errorData = await response.json().catch(() => null);
+        if (errorData?.text) {
+          const elapsed = Date.now() - startedAt;
+          const remaining = MIN_TYPING_MS - elapsed;
+          if (remaining > 0) await new Promise((resolve) => setTimeout(resolve, remaining));
+          setMessages(prev => [...prev, { role: 'assistant', content: errorData.text }]);
+          return;
+        }
+        throw new Error("Failed to fetch");
+      }
 
       const data = await response.json();
 

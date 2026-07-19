@@ -376,58 +376,9 @@ export async function getAIReply({
   throw new Error("All AI providers are currently unavailable.");
 }
 
-// Multimodal: send a PDF directly to Gemini (Groq doesn't reliably accept
-// raw document bytes on free-tier chat models, so this path is Gemini-only).
-// Returns null instead of throwing on failure — CV verification is a nice-to-have,
-// never something that should break the upload itself.
-export async function extractCvSummaryWithGemini({
-  geminiKey,
-  fileBase64,
-  mimeType,
-  prompt,
-}: {
-  geminiKey?: string | null;
-  fileBase64: string;
-  mimeType: string;
-  prompt: string;
-}): Promise<{ text: string; model: string; usage: TokenUsage } | null> {
-  if (!geminiKey) return null;
-
-  for (const model of GEMINI_MODELS) {
-    try {
-      const response = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json", "x-goog-api-key": geminiKey },
-          body: JSON.stringify({
-            contents: [{
-              role: "user",
-              parts: [
-                { inline_data: { mime_type: mimeType, data: fileBase64 } },
-                { text: prompt },
-              ],
-            }],
-            generationConfig: { temperature: 0.2, maxOutputTokens: 400 },
-          }),
-        }
-      );
-      if (!response.ok) continue;
-      const data = await response.json();
-      const text = data?.candidates?.[0]?.content?.parts?.map((p: any) => p.text).join("");
-      if (text) {
-        const usage: TokenUsage = {
-          promptTokens: data?.usageMetadata?.promptTokenCount ?? 0,
-          completionTokens: data?.usageMetadata?.candidatesTokenCount ?? 0,
-          totalTokens: data?.usageMetadata?.totalTokenCount ?? 0,
-          cacheHitTokens: 0,
-          cacheMissTokens: 0,
-        };
-        return { text, model, usage };
-      }
-    } catch {
-      // try next model
-    }
-  }
-  return null;
-}
+// CV summarization no longer sends raw file bytes to a vision model.
+// Neither DeepSeek nor (for cost reasons) our normal path uses a
+// multimodal call anymore — the upload-cv route extracts plain text
+// from the PDF/Word file itself (pdf-parse / mammoth) and passes that
+// text straight through getAIReply, same as every other text call in
+// this file. See src/app/api/upload-cv/route.ts.

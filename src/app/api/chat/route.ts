@@ -1,5 +1,6 @@
 import { createAdminClient } from "@/utils/supabase/admin";
 import { getAIReply, ChatMessage, dedupeRepeatedSentences, enforceSingleQuestion } from "@/utils/ai";
+import { checkRateLimit, getClientIp } from "@/utils/rateLimit";
 
 export const maxDuration = 45;
 
@@ -7,11 +8,26 @@ export async function POST(req: Request) {
   try {
    const { messages, jobContext, candidateId: incomingCandidateId, source } = await req.json();
     const supabase = createAdminClient();
+    const clientIp = getClientIp(req);
 
     // 1. Make sure a candidate record exists for this conversation.
     let candidateId = incomingCandidateId as string | null;
 
     if (!candidateId) {
+      // New-candidate spam guard, keyed per IP — one script hammering
+      // "start a new conversation" repeatedly only ever throttles that
+      // IP, never any other candidate or agency. 20/hour comfortably
+      // covers a real burst from a job board or shared office network,
+      // while blocking a script that would otherwise create hundreds of
+      // fake candidate rows (and burn an AI call for each).
+      const { allowed } = await checkRateLimit(supabase, `chat:new-candidate:${clientIp}`, 3600, 20);
+      if (!allowed) {
+        return Response.json(
+          { text: "Too many requests from this connection right now — please try again in a bit." },
+          { status: 429 }
+        );
+      }
+
       const { data: candidate, error: candidateError } = await supabase
         .from("candidates")
        .insert({ job_id: jobContext.id, status: "screening", source: source || "direct" })
@@ -36,6 +52,22 @@ export async function POST(req: Request) {
         console.error("🔥 COULD NOT BACKFILL TRANSCRIPT:", backfillError.message);
       }
     } else {
+      // Per-candidate spam guard — keyed by candidateId, not IP, since
+      // a legitimate candidate on a shaky connection can legitimately
+      // retry from a new IP mid-conversation. 30 messages per 3 minutes
+      // is far beyond anything a real person typing produces (especially
+      // now that the client already batches rapid messages via the
+      // debounce), but stops a script from looping AI calls against one
+      // conversation. Only ever throttles this one candidate's chat —
+      // no effect on anyone else's, in this agency or any other.
+      const { allowed } = await checkRateLimit(supabase, `chat:candidate:${candidateId}`, 180, 30);
+      if (!allowed) {
+        return Response.json(
+          { text: "You're sending messages a bit fast — give it a moment and try again." },
+          { status: 429 }
+        );
+      }
+
       // Every message after the last assistant turn is "new" — unsaved.
       // This used to just be messages[messages.length - 1], which
       // assumed exactly one new user message per call. That assumption
