@@ -385,7 +385,7 @@ export default function NewJobPage() {
                 <ShieldCheck size={18} className={screeningRigor === 'thorough' ? 'text-primary shrink-0 mt-0.5' : 'text-slate-400 shrink-0 mt-0.5'} />
                 <div>
                   <p className="text-sm font-bold text-slate-900">Thorough</p>
-                  <p className="text-xs text-slate-500 mt-0.5">Nova probes and verifies claims, and is stricter about vague or unsupported answers.</p>
+                  <p className="text-xs text-slate-500 mt-0.5">For skill-based must-haves, Nova asks one quick question anyone real in that field would find easy. Facts like location or a degree are never probed either way.</p>
                 </div>
               </label>
               <label className={`flex items-start gap-3 p-4 rounded-xl border-2 cursor-pointer transition-all ${screeningRigor === 'trusting' ? 'border-primary bg-blue-50' : 'border-slate-200 bg-slate-50 hover:border-slate-300'}`}>
@@ -393,7 +393,7 @@ export default function NewJobPage() {
                 <ShieldQuestion size={18} className={screeningRigor === 'trusting' ? 'text-primary shrink-0 mt-0.5' : 'text-slate-400 shrink-0 mt-0.5'} />
                 <div>
                   <p className="text-sm font-bold text-slate-900">Trusting</p>
-                  <p className="text-xs text-slate-500 mt-0.5">Nova takes candidates at their word and moves faster, with lighter follow-up questions.</p>
+                  <p className="text-xs text-slate-500 mt-0.5">Nova keeps it chill on skill claims — asks once, takes a clear answer at face value, and moves on.</p>
                 </div>
               </label>
             </div>

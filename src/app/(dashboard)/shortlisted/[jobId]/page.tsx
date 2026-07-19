@@ -60,9 +60,26 @@ export default async function ShortlistedJobPage({
   const refined = await Promise.all(
     topSlice.map(async (m) => {
       const ai = await aiRefineMatch(job, m.candidate, deepseekKey, geminiKey);
-      return ai
-        ? { ...m, score: ai.score / 100, reason: ai.reason, aiRefined: true }
-        : { ...m, aiRefined: false };
+      if (!ai) return { ...m, aiRefined: false };
+
+      // Log usage same as every other AI call site — this one was
+      // previously the one gap where usage went untracked.
+      const { error: usageError } = await supabase.from("usage_events").insert({
+        source: "shortlist_match",
+        candidate_id: m.candidate.id,
+        recruiter_id: user?.id,
+        job_id: jobId,
+        provider: ai.provider,
+        model: ai.model,
+        prompt_tokens: ai.usage.promptTokens,
+        completion_tokens: ai.usage.completionTokens,
+        total_tokens: ai.usage.totalTokens,
+        cache_hit_tokens: ai.usage.cacheHitTokens,
+        cache_miss_tokens: ai.usage.cacheMissTokens,
+      });
+      if (usageError) console.error("⚠️ COULD NOT LOG USAGE EVENT:", usageError.message);
+
+      return { ...m, score: ai.score / 100, reason: ai.reason, aiRefined: true };
     })
   );
   const matches = [...refined, ...keywordMatches.slice(5).map((m) => ({ ...m, aiRefined: false }))]

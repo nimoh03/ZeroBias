@@ -344,11 +344,11 @@ export default function ConversationalBuilder() {
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <button type="button" onClick={() => setScreeningRigor('thorough')} className={`text-left p-3.5 rounded-xl border-2 transition-all ${screeningRigor === 'thorough' ? 'border-primary bg-blue-50' : 'border-slate-200 bg-white hover:border-slate-300'}`}>
                   <p className="text-sm font-bold text-slate-900">Thorough</p>
-                  <p className="text-xs text-slate-500 mt-0.5">Pushes for specifics before accepting a claim.</p>
+                  <p className="text-xs text-slate-500 mt-0.5">For skill-based must-haves, one quick question anyone real in that field would find easy. Facts like location or a degree are never probed either way.</p>
                 </button>
                 <button type="button" onClick={() => setScreeningRigor('trusting')} className={`text-left p-3.5 rounded-xl border-2 transition-all ${screeningRigor === 'trusting' ? 'border-primary bg-blue-50' : 'border-slate-200 bg-white hover:border-slate-300'}`}>
                   <p className="text-sm font-bold text-slate-900">Trusting</p>
-                  <p className="text-xs text-slate-500 mt-0.5">Takes a clear, direct answer at face value.</p>
+                  <p className="text-xs text-slate-500 mt-0.5">Keeps it chill on skill claims — asks once, takes a clear answer at face value.</p>
                 </button>
               </div>
             </div>

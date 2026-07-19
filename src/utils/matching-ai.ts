@@ -10,7 +10,7 @@
 import { getAIReply } from "@/utils/ai";
 import type { JobForMatching, CandidateForJobMatch } from "@/utils/matching";
 
-export type AiMatchResult = { score: number; reason: string };
+export type AiMatchResult = { score: number; reason: string; provider: string; model: string; usage: import("@/utils/ai").TokenUsage };
 
 export async function aiRefineMatch(
   job: JobForMatching,
@@ -41,7 +41,7 @@ NICE TO HAVES: ${job.nice_to_haves || "none listed"}
 CANDIDATE PROFILE: ${candidateProfile.slice(0, 1500)}`;
 
   try {
-    const { text } = await getAIReply({
+    const { text, provider, model, usage } = await getAIReply({
       deepseekKey,
       geminiKey,
       messages: [
@@ -55,7 +55,7 @@ CANDIDATE PROFILE: ${candidateProfile.slice(0, 1500)}`;
     const parsed = JSON.parse(cleaned);
     if (typeof parsed.score !== "number" || typeof parsed.reason !== "string") return null;
 
-    return { score: Math.max(0, Math.min(100, parsed.score)), reason: parsed.reason };
+    return { score: Math.max(0, Math.min(100, parsed.score)), reason: parsed.reason, provider, model, usage };
   } catch {
     // AI backup is best-effort — if it fails, callers should just keep
     // the keyword-overlap score instead of breaking the page.
