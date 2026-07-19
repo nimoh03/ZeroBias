@@ -32,14 +32,17 @@ export default async function JobMatchesPanel({
         <h3 className="text-sm font-bold text-on-surface">Other Roles This Candidate Might Fit</h3>
       </div>
       <div className="space-y-2">
-        {jobMatches.map(({ job, score }) => (
+        {jobMatches.map(({ job, score, reason }) => (
           <Link
             key={job.id}
             href={`/jobs/${job.id}/edit`}
             className="flex items-center justify-between px-3 py-2.5 rounded-xl border border-outline-variant hover:border-primary hover:bg-primary/5 transition-colors"
           >
-            <span className="text-sm font-medium text-on-surface">{job.title}</span>
-            <span className="text-xs font-bold text-primary">{Math.round(score * 100)}% match</span>
+            <div>
+              <span className="text-sm font-medium text-on-surface">{job.title}</span>
+              <p className="text-xs text-on-surface-variant mt-0.5">{reason}</p>
+            </div>
+            <span className="text-xs font-bold text-primary shrink-0 ml-3">{Math.round(score * 100)}% match</span>
           </Link>
         ))}
       </div>

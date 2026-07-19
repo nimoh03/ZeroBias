@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useTransition, KeyboardEvent, useRef, useEffect } from "react";
-import { Sparkles, Loader2, X, ArrowRight, ArrowLeft as ArrowLeftIcon, CheckCircle2, FileText, Brain, Send, Calendar } from "lucide-react";
+import { Sparkles, Loader2, X, ArrowRight, ArrowLeft as ArrowLeftIcon, CheckCircle2, FileText, Brain, Send, Calendar, ChevronDown } from "lucide-react";
 import { createJobAction } from "./action";
 import InterviewSlotsEditor, { type SlotRow } from "@/components/InterviewSlotsEditor";
 
@@ -147,18 +147,21 @@ export default function ConversationalBuilder() {
             </div>
             <div className="space-y-2">
               <label className="text-sm font-bold text-slate-700">Location</label>
-              <input value={location} onChange={e => setLocation(e.target.value)} placeholder="e.g. Remote, Lagos, London" className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3.5 text-sm focus:bg-white focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all" />
+              <input value={location} onChange={e => setLocation(e.target.value)} placeholder="Where is this job? e.g. Remote, Lagos, or London office" className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3.5 text-sm focus:bg-white focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all" />
             </div>
           </div>
 
           <div className="space-y-2">
             <label className="text-sm font-bold text-slate-700">Employment Type</label>
-            <select value={jobType} onChange={e => setJobType(e.target.value)} className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3.5 text-sm focus:bg-white focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all appearance-none cursor-pointer">
-              <option>Full-time</option>
-              <option>Contract</option>
-              <option>Part-time</option>
-              <option>Internship</option>
-            </select>
+            <div className="relative">
+              <select value={jobType} onChange={e => setJobType(e.target.value)} className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3.5 text-sm focus:bg-white focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all appearance-none cursor-pointer pr-10">
+                <option>Full-time</option>
+                <option>Contract</option>
+                <option>Part-time</option>
+                <option>Internship</option>
+              </select>
+              <ChevronDown size={16} className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-slate-400" />
+            </div>
           </div>
 
           <div className="border-t border-slate-100 pt-6 space-y-3">
@@ -170,9 +173,9 @@ export default function ConversationalBuilder() {
               Just tell Nova, one thing at a time — "must be in Lagos or close by", "5+ years in backend engineering", "comfortable leading a small team". Press Enter after each one. Nova will sort it out from here.
             </p>
 
-            <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4 space-y-2 max-h-72 overflow-y-auto">
+            <div className={`rounded-2xl overflow-y-auto transition-all ${chatEntries.length === 0 ? "border-2 border-dashed border-slate-200 bg-white flex items-center justify-center py-6" : "bg-slate-50 border border-slate-200 p-4 space-y-2 max-h-72"}`}>
               {chatEntries.length === 0 && (
-                <p className="text-sm text-slate-400 italic px-1 py-2">Nothing added yet — start typing below.</p>
+                <p className="text-xs text-slate-400 text-center px-4">Nothing added yet — start typing below.</p>
               )}
               {chatEntries.map((entry, i) => (
                 <div key={i} className="flex items-start gap-2 bg-white border border-slate-200 rounded-xl px-4 py-2.5 shadow-sm animate-in fade-in slide-in-from-bottom-1">

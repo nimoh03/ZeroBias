@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { Zap, LayoutDashboard, Briefcase, Users, BarChart3, Settings, Plus, HelpCircle, LogOut } from 'lucide-react';
+import { Zap, LayoutDashboard, Briefcase, Users, BarChart3, Settings, Plus, HelpCircle, LogOut, Star } from 'lucide-react';
 
 export default function Sidebar() {
   const pathname = usePathname();
@@ -51,6 +51,18 @@ export default function Sidebar() {
         >
           <Users size={18} strokeWidth={pathname.startsWith('/candidates') ? 2.5 : 2} />
           <span className="text-sm font-semibold">Candidates</span>
+        </Link>
+
+        <Link
+          href="/shortlisted"
+          className={`flex items-center gap-3 rounded-xl px-4 py-2.5 transition-all ${
+            pathname.startsWith('/shortlisted')
+              ? 'bg-primary text-white shadow-md shadow-primary/20'
+              : 'text-slate-500 hover:text-slate-900 hover:bg-slate-100'
+          }`}
+        >
+          <Star size={18} strokeWidth={pathname.startsWith('/shortlisted') ? 2.5 : 2} />
+          <span className="text-sm font-semibold">Shortlisted</span>
         </Link>
 
       <Link 

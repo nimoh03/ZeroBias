@@ -237,7 +237,7 @@ export default function NewJobPage() {
             </div>
             <div className="space-y-2">
               <label className="text-sm font-bold text-slate-700">Location</label>
-              <input required name="location" value={formData.location} onChange={handleChange} placeholder="e.g. Remote, Lagos, London" className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3.5 text-sm focus:bg-white focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all" />
+              <input required name="location" value={formData.location} onChange={handleChange} placeholder="Where is this job? e.g. Remote, Lagos, or London office" className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3.5 text-sm focus:bg-white focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all" />
             </div>
           </div>
 
@@ -256,7 +256,7 @@ export default function NewJobPage() {
 
           <div className="space-y-2">
             <label className="text-sm font-bold text-slate-700">Candidate-Facing Summary</label>
-            <textarea required name="description" value={formData.description} onChange={handleChange} rows={3} placeholder="We are looking for a developer to build modern web interfaces..." className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3.5 text-sm focus:bg-white focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all resize-none" />
+            <textarea required name="description" value={formData.description} onChange={handleChange} rows={3} placeholder="Describe the job to the AI — Nova will use this to answer candidates if they ask what the job involves." className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3.5 text-sm focus:bg-white focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all resize-none" />
           </div>
         </div>
 

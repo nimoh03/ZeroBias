@@ -2,14 +2,14 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { LayoutDashboard, Briefcase, Users, BarChart3, Settings } from 'lucide-react';
+import { LayoutDashboard, Briefcase, Users, BarChart3, Settings, Star } from 'lucide-react';
 
 export default function MobileNav() {
   const pathname = usePathname();
 
   return (
     <nav className="lg:hidden fixed bottom-0 left-0 right-0 z-50 bg-surface border-t border-outline-variant pb-safe">
-      <div className="flex justify-around items-center px-4 py-3">
+      <div className="flex justify-around items-center px-1 py-3">
         <Link 
           href="/dashboard" 
           className={`flex flex-col items-center gap-1 transition-colors ${pathname === '/dashboard' ? 'text-primary' : 'text-on-surface-variant hover:text-primary'}`}
@@ -38,6 +38,16 @@ export default function MobileNav() {
             <Users size={20} />
           </div>
           <span className="text-[10px] font-medium">Candidates</span>
+        </Link>
+
+        <Link
+          href="/shortlisted"
+          className={`flex flex-col items-center gap-1 transition-colors ${pathname.startsWith('/shortlisted') ? 'text-primary' : 'text-on-surface-variant hover:text-primary'}`}
+        >
+          <div className={pathname.startsWith('/shortlisted') ? 'bg-primary-container/10 p-1.5 rounded-full' : 'p-1.5'}>
+            <Star size={20} />
+          </div>
+          <span className="text-[10px] font-medium">Shortlist</span>
         </Link>
 
         <Link 
