@@ -3,10 +3,39 @@
 import { useState } from 'react';
 import {
   Palette, Users, CreditCard,
-  UploadCloud, Shield
+  UploadCloud, Shield, Gauge
 } from 'lucide-react';
 
-export default function SettingsClient() {
+type UsageRow = {
+  provider: string;
+  model: string;
+  callCount: number;
+  promptTokens: number;
+  completionTokens: number;
+  cacheHitTokens: number;
+  cacheMissTokens: number;
+  costUsd: number | null;
+};
+
+type UsageSummary = {
+  rows: UsageRow[];
+  totalCostUsd: number;
+  hasUnpricedUsage: boolean;
+  completedScreenings: number;
+  costPerScreening: number | null;
+};
+
+function formatUsd(n: number) {
+  return n < 0.01 && n > 0 ? `$${n.toFixed(4)}` : `$${n.toFixed(2)}`;
+}
+
+function formatTokens(n: number) {
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(2)}M`;
+  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`;
+  return String(n);
+}
+
+export default function SettingsClient({ usage }: { usage: UsageSummary }) {
   const [activeTab, setActiveTab] = useState('branding');
 
   return (
@@ -70,12 +99,91 @@ export default function SettingsClient() {
         </div>
       )}
 
-      {/* Tab Content: Placeholder for Team & Billing */}
-      {(activeTab === 'team' || activeTab === 'billing') && (
+      {/* Tab Content: Billing — real usage/cost data, last 30 days */}
+      {activeTab === 'billing' && (
+        <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
+
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <div className="bg-surface-container-lowest p-6 rounded-xl border border-outline-variant shadow-sm">
+              <p className="text-xs font-bold text-on-surface-variant uppercase tracking-wide">Completed Screenings</p>
+              <p className="text-3xl font-bold text-on-surface mt-2">{usage.completedScreenings}</p>
+              <p className="text-xs text-on-surface-variant mt-1">Last 30 days · candidates with a final decision</p>
+            </div>
+            <div className="bg-surface-container-lowest p-6 rounded-xl border border-outline-variant shadow-sm">
+              <p className="text-xs font-bold text-on-surface-variant uppercase tracking-wide">AI Cost</p>
+              <p className="text-3xl font-bold text-on-surface mt-2">{formatUsd(usage.totalCostUsd)}</p>
+              <p className="text-xs text-on-surface-variant mt-1">
+                Last 30 days{usage.hasUnpricedUsage ? " · excludes Gemini fallback calls" : ""}
+              </p>
+            </div>
+            <div className="bg-primary/5 p-6 rounded-xl border border-primary/20">
+              <p className="text-xs font-bold text-primary uppercase tracking-wide">Cost / Completed Screening</p>
+              <p className="text-3xl font-bold text-on-surface mt-2">
+                {usage.costPerScreening !== null ? formatUsd(usage.costPerScreening) : "—"}
+              </p>
+              <p className="text-xs text-on-surface-variant mt-1">
+                {usage.costPerScreening !== null
+                  ? "The number that actually matters for pricing"
+                  : "No completed screenings in this period yet"}
+              </p>
+            </div>
+          </div>
+
+          {usage.hasUnpricedUsage && (
+            <div className="flex items-start gap-3 bg-amber-500/10 border border-amber-500/20 rounded-xl p-4 text-xs text-on-surface-variant">
+              <Gauge size={16} className="text-amber-600 shrink-0 mt-0.5" />
+              <span>Some usage came from the Gemini fallback (used when DeepSeek is unavailable). Gemini currently runs on a free/unconfirmed-pricing tier, so it's shown in tokens below but left out of the dollar totals above — treat the totals as a floor, not the full picture, if Gemini fallback usage is non-trivial.</span>
+            </div>
+          )}
+
+          <div className="bg-surface-container-lowest rounded-xl border border-outline-variant shadow-sm overflow-hidden">
+            <div className="px-6 py-4 border-b border-outline-variant">
+              <h3 className="text-sm font-bold text-on-surface">Usage by Provider &amp; Model</h3>
+              <p className="text-xs text-on-surface-variant mt-0.5">Last 30 days</p>
+            </div>
+            {usage.rows.length === 0 ? (
+              <p className="text-sm text-on-surface-variant text-center py-10">No AI usage recorded in this period yet.</p>
+            ) : (
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="text-left text-xs font-bold text-on-surface-variant uppercase tracking-wide border-b border-outline-variant">
+                    <th className="px-6 py-3">Provider / Model</th>
+                    <th className="px-6 py-3">Calls</th>
+                    <th className="px-6 py-3">Prompt Tokens</th>
+                    <th className="px-6 py-3">Completion Tokens</th>
+                    <th className="px-6 py-3">Cache Hit / Miss</th>
+                    <th className="px-6 py-3 text-right">Est. Cost</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {usage.rows.map((row) => (
+                    <tr key={`${row.provider}-${row.model}`} className="border-b border-outline-variant last:border-0">
+                      <td className="px-6 py-3">
+                        <span className="font-bold text-on-surface">{row.model}</span>
+                        <span className="text-xs text-on-surface-variant ml-2 capitalize">{row.provider}</span>
+                      </td>
+                      <td className="px-6 py-3 text-on-surface-variant">{row.callCount}</td>
+                      <td className="px-6 py-3 text-on-surface-variant">{formatTokens(row.promptTokens)}</td>
+                      <td className="px-6 py-3 text-on-surface-variant">{formatTokens(row.completionTokens)}</td>
+                      <td className="px-6 py-3 text-on-surface-variant">{formatTokens(row.cacheHitTokens)} / {formatTokens(row.cacheMissTokens)}</td>
+                      <td className="px-6 py-3 text-right font-bold text-on-surface">
+                        {row.costUsd !== null ? formatUsd(row.costUsd) : <span className="text-on-surface-variant font-normal">n/a</span>}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Tab Content: Placeholder for Team */}
+      {activeTab === 'team' && (
         <div className="flex flex-col items-center justify-center py-20 bg-surface-container-lowest rounded-xl border border-outline-variant border-dashed animate-in fade-in duration-500">
           <Shield size={48} className="text-outline-variant mb-4" />
           <h3 className="text-lg font-bold text-on-surface">Coming Soon</h3>
-          <p className="text-sm text-on-surface-variant mt-2 max-w-sm text-center">The {activeTab} management features are currently being built. Check back soon!</p>
+          <p className="text-sm text-on-surface-variant mt-2 max-w-sm text-center">Team management features are currently being built. Check back soon!</p>
         </div>
       )}
 
