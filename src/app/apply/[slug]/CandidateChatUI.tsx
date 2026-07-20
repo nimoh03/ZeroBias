@@ -23,6 +23,15 @@ const MIN_TYPING_MS = 1200;
 export default function CandidateChatUI({ job, source }: { job: any; source?: string }) {
   const [inputText, setInputText] = useState("");
   const [isLoading, setIsLoading] = useState(false);
+  // Separate from isLoading on purpose: isLoading only covers the actual
+  // AI call and gates the input/send button (disabled while a call is
+  // genuinely in flight). showTyping covers everything from the moment
+  // a candidate hits send — including the 3s debounce window before the
+  // AI call even starts — so there's never a silent gap where nothing
+  // on screen indicates Nova is about to respond. Two real candidates
+  // (Samuel, Fortune) sent confused "what next?" / "Hello..." messages
+  // into exactly that gap during testing.
+  const [showTyping, setShowTyping] = useState(false);
   const [candidateId, setCandidateId] = useState<string | null>(null);
   const [hydrated, setHydrated] = useState(false);
   const [isDone, setIsDone] = useState(false);
@@ -78,7 +87,7 @@ export default function CandidateChatUI({ job, source }: { job: any; source?: st
 
   useEffect(() => {
     scrollRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
-  }, [messages, isLoading, interviewSlots, selectedSlot]);
+  }, [messages, isLoading, showTyping, interviewSlots, selectedSlot]);
 
   // Clear any pending debounced send if the candidate navigates away
   // mid-window — otherwise a stray timer could fire against an unmounted
@@ -149,17 +158,33 @@ export default function CandidateChatUI({ job, source }: { job: any; source?: st
     setIsLoading(true);
     const startedAt = Date.now();
 
+    // Small helper so a genuine network blip (dropped connection, brief
+    // timeout — common on mobile data) gets one silent retry before the
+    // candidate ever sees an error. Only retries on an actual fetch/
+    // network failure, not on a normal error response from the server
+    // (those already have their own handling below).
+    const doFetch = () => fetch('/api/chat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        messages: allMessages,
+        jobContext: job,
+        candidateId,
+        source,
+      }),
+    });
+
     try {
-      const response = await fetch('/api/chat', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          messages: allMessages,
-          jobContext: job,
-          candidateId,
-          source,
-        }),
-      });
+      let response: Response;
+      try {
+        response = await doFetch();
+      } catch {
+        // First attempt failed outright (network error, not an HTTP
+        // error response) — wait briefly and try once more before
+        // giving up.
+        await new Promise((resolve) => setTimeout(resolve, 1200));
+        response = await doFetch();
+      }
 
       if (!response.ok) {
         // Rate-limit (429) and other handled error responses still come
@@ -203,6 +228,7 @@ export default function CandidateChatUI({ job, source }: { job: any; source?: st
       setMessages(prev => [...prev, { role: 'assistant', content: "Having trouble connecting right now — could you try sending that again?" }]);
     } finally {
       setIsLoading(false);
+      setShowTyping(false);
     }
   };
 
@@ -214,6 +240,7 @@ export default function CandidateChatUI({ job, source }: { job: any; source?: st
     setMessages(prev => [...prev, userMessage]);
     setInputText("");
     if (textareaRef.current) textareaRef.current.style.height = 'auto';
+    setShowTyping(true);
 
     // Debounce: don't call the AI immediately. If another message comes
     // in before the window closes, this timer resets and both messages
@@ -312,7 +339,7 @@ export default function CandidateChatUI({ job, source }: { job: any; source?: st
           </div>
         ))}
 
-        {isLoading && (
+        {showTyping && (
           <div className="flex gap-3">
             <div className="w-8 h-8 shrink-0 rounded-full bg-primary flex items-center justify-center text-white text-xs font-bold">N</div>
             <div className="px-4 py-3 rounded-2xl bg-slate-50 border border-slate-200 rounded-tl-sm flex items-center gap-2">
