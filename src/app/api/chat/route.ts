@@ -170,9 +170,9 @@ ${rigorSection}
 ${schedulingSection}
 
 HOW TO RUN THE CONVERSATION:
-1. Collect the candidate's full name and email address before anything else — you need both to keep a record, even if you don't need email for anything else in the chat. If either is still missing, that is always the next question. The moment you learn or update either value — even mid-conversation, long before a final verdict — you MUST append a ###PROFILE### block (format given at the end of this prompt) after your reply, on every turn from that point until both are known. This is not optional and is just as important as the reply text itself.
+1. Collect the candidate's full name, email address, and phone number before anything else — you need all three to keep a record. If any of the three is still missing, that is always the next question (ask them one at a time, following the one-question rule below — never all three stacked in one message). The moment you learn or update any of the three — even mid-conversation, long before a final verdict — you MUST append a ###PROFILE### block (format given at the end of this prompt) after your reply, on every turn from that point until all three are known. This is not optional and is just as important as the reply text itself.
 2. Ask exactly ONE question per message — never two, never a question plus a follow-up in the same reply, even if it feels efficient. If you notice you've written a second question mark in one message, delete everything after the first question before sending.
-2a. A "combo" is allowed ONLY when the two pieces are the same fact pair every time: name + email, or a skill + its duration ("which tools, and how long on them"). Nothing else gets bundled. Concretely: never stack a skill question, a duration question, AND a different technology/project question in one message (e.g. don't ask "did you use React, for how long, and did you use Next.js App Router in that or another project" — that's three asks wearing one question mark). If a topic needs more than one fact beyond the allowed pair, split it: ask about React first, wait for the answer, then ask about Next.js App Router as its own message. When in doubt, ask the narrower question — a candidate should never have to hold more than two things in their head to answer you.
+2a. A "combo" is allowed ONLY for a skill + its duration ("which tools, and how long on them"). Nothing else gets bundled — including name, email, and phone, which are asked strictly one at a time per rule 1 above. Concretely: never stack a skill question, a duration question, AND a different technology/project question in one message (e.g. don't ask "did you use React, for how long, and did you use Next.js App Router in that or another project" — that's three asks wearing one question mark). If a topic needs more than one fact beyond the allowed pair, split it: ask about React first, wait for the answer, then ask about Next.js App Router as its own message. When in doubt, ask the narrower question — a candidate should never have to hold more than two things in their head to answer you.
 2b. This "one question" rule still applies even when a single question has more than one part to it (name + email, "what and when", "which tools and how long", etc). Before moving on from ANY question, mentally check off every distinct piece of information it asked for. If the candidate's reply only supplies some of those pieces, do not treat the question as answered and do not advance to a new topic — your next message must name the exact piece(s) still missing (e.g. "And your email?" or "Got the tools — how many years on them?"), never a generic full re-ask of the original question. Only move on once every part has a real answer.
 3. Wait for a real, substantive answer before moving on. This applies to every question, not just name/email. A non-answer includes: silence on the actual question, "do I have to answer this?", "why do you need that?", "can we skip this?", deflection, or a vague/generic answer that doesn't contain the specific information asked for. When you get a non-answer:
    - If they're asking why it matters or pushing back, give a one-sentence reason it's needed for this screening, then ask the same question again — don't cave and move on, and don't just reword it hoping it lands differently.
@@ -195,19 +195,19 @@ Once you have enough information for a final call — a dealbreaker was clearly 
 CLOSING MESSAGE TONE: Never tell the candidate the outcome or say things like "we will not be moving forward" or "unfortunately" — that call belongs to the recruiter, not to you, regardless of what you put in the DECISION block below. Every closing message, qualified or not, should be a short, warm, neutral thank-you along the lines of "Thank you for walking me through that, a member of our team will review your answers and get back to you soon." Keep it to 1-2 sentences. Do not hint at the result either way.
 
 ###DECISION###
-{"status":"qualified" | "rejected" | "needs_review","score":0-100,"candidate_name":"their full name","candidate_email":"their email","summary":"one or two sentence recruiter-facing summary","strengths":["short phrase","short phrase"],"concerns":["short phrase"]}
+{"status":"qualified" | "rejected" | "needs_review","score":0-100,"candidate_name":"their full name","candidate_email":"their email","candidate_phone":"their phone number","summary":"one or two sentence recruiter-facing summary","strengths":["short phrase","short phrase"],"concerns":["short phrase"]}
 ###END###
 
 Include this block AT MOST ONCE, at the very end of the message, never repeated. Use "needs_review" whenever answers are ambiguous, conflicting, or you're genuinely unsure — don't force a hard qualified/rejected call you're not confident in. Never include this block until you've truly reached a final verdict.
 
-CAPTURING NAME/EMAIL EARLY (separate from the final decision):
-As soon as you learn or update the candidate's name and/or email — even mid-conversation, long before you're ready for a final verdict — append this block after your reply (in addition to your normal message, on its own new line). Include it AT MOST ONCE per message, never repeated:
+CAPTURING NAME/EMAIL/PHONE EARLY (separate from the final decision):
+As soon as you learn or update the candidate's name, email, and/or phone number — even mid-conversation, long before you're ready for a final verdict — append this block after your reply (in addition to your normal message, on its own new line). Include it AT MOST ONCE per message, never repeated:
 
 ###PROFILE###
-{"name":"their full name or null if still unknown","email":"their email or null if still unknown"}
+{"name":"their full name or null if still unknown","email":"their email or null if still unknown","phone":"their phone number or null if still unknown"}
 ###END###
 
-Include this block on every turn from the moment you first learn either value, so the record is never left blank while the conversation is still ongoing.`;
+Include this block on every turn from the moment you first learn any of the three values, so the record is never left blank while the conversation is still ongoing.`;
 
     // 3. Resolve which keys to use — the recruiter's own, if they've opted
     // in and saved them, otherwise the platform's.
@@ -267,11 +267,12 @@ Include this block on every turn from the moment you first learn either value, s
       score: number;
       candidate_name?: string;
       candidate_email?: string;
+      candidate_phone?: string;
       summary?: string;
       strengths?: string[];
       concerns?: string[];
     } | null = null;
-    let profileUpdate: { name?: string | null; email?: string | null } | null = null;
+    let profileUpdate: { name?: string | null; email?: string | null; phone?: string | null } | null = null;
 
     const decisionMatch = aiResponseText.match(/###DECISION###([\s\S]*?)###END###/);
     if (decisionMatch) {
@@ -390,6 +391,25 @@ Include this block on every turn from the moment you first learn either value, s
       }
     }
 
+    // Same fallback as above, for phone. Phone formats vary a lot
+    // (spaces, dashes, parens, country codes) so the regex is looser —
+    // it just needs to find a run that's plausibly a phone number, not
+    // validate it fully; the digit-count check below (right before
+    // saving) is the real gate against garbage getting through.
+    if (!profileUpdate?.phone) {
+      const { data: existingPhone } = await supabase.from("candidates").select("phone").eq("id", candidateId).single();
+      if (!existingPhone?.phone) {
+        const candidateMessages = messages.filter((m: { role: string }) => m.role === "user");
+        for (let i = candidateMessages.length - 1; i >= 0; i--) {
+          const phoneMatch = candidateMessages[i].content.match(/(\+?\d[\d\s().-]{6,17}\d)/);
+          if (phoneMatch) {
+            profileUpdate = { ...profileUpdate, phone: phoneMatch[0].trim() };
+            break;
+          }
+        }
+      }
+    }
+
     // Failsafe: validate email format before it ever reaches the
     // database. Neither the model nor the regex scan above guarantees a
     // deliverable address (e.g. "john@gmailcom" — missing the dot before
@@ -406,12 +426,30 @@ Include this block on every turn from the moment you first learn either value, s
         : " Also, could you confirm your email? It didn't look quite right.";
     }
 
+    // Same class of guard for phone: strip everything but digits and a
+    // leading +, then just check the digit count falls in a plausible
+    // range (7-15, per the international E.164 max) rather than trying
+    // to validate a specific country format — this app has no fixed
+    // region, so a strict pattern would reject real numbers as often as
+    // it catches bad ones.
+    if (profileUpdate?.phone) {
+      const digitsOnly = profileUpdate.phone.replace(/[^\d]/g, "");
+      if (digitsOnly.length < 7 || digitsOnly.length > 15) {
+        console.error("⚠️ MALFORMED PHONE CAUGHT, NOT SAVING:", profileUpdate.phone);
+        profileUpdate = { ...profileUpdate, phone: null };
+        aiResponseText += aiResponseText.endsWith(".") || aiResponseText.endsWith("?")
+          ? " Also, could you confirm your phone number? It didn't look quite right."
+          : " Also, could you confirm your phone number? It didn't look quite right.";
+      }
+    }
+
     // 5. Save whichever updates we got. Decision (if present) wins on
     // name/email since it's the most authoritative, final pass.
-    if (profileUpdate && (profileUpdate.name || profileUpdate.email) && !decision) {
+    if (profileUpdate && (profileUpdate.name || profileUpdate.email || profileUpdate.phone) && !decision) {
       const update: Record<string, unknown> = {};
       if (profileUpdate.name) update.name = profileUpdate.name;
       if (profileUpdate.email) update.email = profileUpdate.email;
+      if (profileUpdate.phone) update.phone = profileUpdate.phone;
       const { error } = await supabase.from("candidates").update(update).eq("id", candidateId);
       if (error) console.error("🔥 COULD NOT SAVE PROFILE UPDATE:", error.message);
     }
@@ -422,6 +460,7 @@ Include this block on every turn from the moment you first learn either value, s
         score: decision.score,
         name: decision.candidate_name,
         email: decision.candidate_email,
+        phone: decision.candidate_phone,
         summary: decision.summary,
         strengths: decision.strengths ?? [],
         concerns: decision.concerns ?? [],
