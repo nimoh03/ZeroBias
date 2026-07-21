@@ -16,7 +16,7 @@ const MAX_SIZE_BYTES = 5 * 1024 * 1024; // 5MB
 // as unsupported for summarization, same as a scanned/image-only PDF:
 // the file still uploads and is still viewable by the recruiter, it
 // just won't get an AI-generated summary.
-async function extractTextFromFile(buffer: Buffer, mimeType: string): Promise<string | null> {
+async function extractTextFromFile(buffer: Buffer, mimeType: string, fileName: string): Promise<string | null> {
   try {
     if (mimeType === "application/pdf") {
       const pdfParse = (await import("pdf-parse")).default;
@@ -33,7 +33,26 @@ async function extractTextFromFile(buffer: Buffer, mimeType: string): Promise<st
     // (e.g. LibreOffice). Skip summarization rather than guess.
     return null;
   } catch (err) {
-    console.error("⚠️ CV TEXT EXTRACTION FAILED:", (err as Error).message || err);
+    console.error(`⚠️ CV TEXT EXTRACTION FAILED (pdf-parse) [${fileName}, ${buffer.length}b]:`, (err as Error).message || err);
+    // pdf-parse's bundled pdf.js can't recover a broken xref table.
+    // Retry with pdfjs-dist directly, which rebuilds the xref by
+    // scanning objects linearly when the table itself is corrupt.
+    if (mimeType === "application/pdf") {
+      try {
+        const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
+        const doc = await pdfjs.getDocument({ data: new Uint8Array(buffer), stopAtErrors: false }).promise;
+        let text = "";
+        for (let i = 1; i <= doc.numPages; i++) {
+          const page = await doc.getPage(i);
+          const content = await page.getTextContent();
+          text += content.items.map((it: any) => it.str).join(" ") + "\n";
+        }
+        return text.trim() || null;
+      } catch (fallbackErr) {
+        console.error(`⚠️ CV TEXT EXTRACTION FAILED (pdfjs fallback) [${fileName}, ${buffer.length}b]:`, (fallbackErr as Error).message || fallbackErr);
+        return null;
+      }
+    }
     return null;
   }
 }
@@ -93,7 +112,7 @@ export async function POST(req: Request) {
     let cvSummary: string | null = null;
     let cvUsage: import("@/utils/ai").TokenUsage | null = null;
 
-    const extractedText = await extractTextFromFile(fileBuffer, file.type);
+const extractedText = await extractTextFromFile(fileBuffer, file.type, file.name);
 
     if (extractedText && extractedText.length > 20) {
       const deepseekKey = process.env.DEEPSEEK_API_KEY;

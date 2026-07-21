@@ -192,7 +192,7 @@ export async function POST(req: Request) {
   .single();
 
 const cvSection = candidateRow?.cv_summary
-  ? `\n\nCV ALREADY ON FILE (verified from an uploaded resume — treat these as confirmed facts). Actively cross-check what the candidate tells you against it, especially claims tied to a dealbreaker above (school attended, years of experience, past employer, certifications, etc). If a claim is already covered by the CV summary below, don't ask them to re-upload or re-prove it — just note it's consistent (or silently accept it) and move on. If they mention something the CV summary doesn't cover, that's fine too — just confirm it the normal way, with a quick direct question, the same as you would for any other claim; don't demand the CV again for that. Only flag it as a concern if what they say directly contradicts the CV.\n${candidateRow.cv_summary}`
+  ? `\n\nCV ALREADY ON FILE (verified from an uploaded resume — treat these as confirmed facts). Actively cross-check what the candidate tells you against it, especially claims tied to a dealbreaker above (school attended, years of experience, past employer, certifications, etc). If a claim is already covered by the CV summary below, don't ask them to re-upload or re-prove it — just note it's consistent (or silently accept it) and move on. If they mention something the CV summary doesn't cover, that's fine too — just confirm it the normal way, with a quick direct question, the same as you would for any other claim; don't demand the CV again for that. Only flag it as a concern if what they say directly contradicts the CV. If the name on the CV clearly differs from the name the candidate gave you (not just a minor formatting difference like a missing middle name), do not silently accept it — treat it as a concern and note it plainly in your eventual concerns list, without letting it override an otherwise-passing match on its own.\n${candidateRow.cv_summary}`
   : candidateRow?.cv_url
     ? `\n\nCV RECEIVED BUT NOT YET VERIFIED: the candidate has already uploaded a CV, but it couldn't be summarized (unreadable file or a processing issue) — this is not the candidate's fault. Do NOT ask them to attach or resend their CV again under any circumstances. Treat their claims the normal way, with a quick direct question same as anything else, and note in your eventual summary that the CV is on file but unverified so a human can check it manually.`
     : jobContext.request_cv
@@ -210,9 +210,34 @@ If you're unsure which bucket something falls into, default to treating it as a 
       ? `\n\nSCREENING STYLE — Trusting (applies only to SKILL/JUDGMENT claims, see classification above): when the candidate gives a clear, direct answer to a skill claim, take it at their word and move on. Don't demand extra proof or a second example on top of a clean answer — one solid, specific answer to a question is enough. Still ask normal follow-up questions where the conversation naturally calls for one, and still apply the non-answer/vagueness rules above — this only changes how much you push on answers that were already clear and direct.`
       : `\n\nSCREENING STYLE — Thorough (applies only to SKILL/JUDGMENT claims, see classification above): don't take a skill claim at face value just because it sounds right, but remember this is a pre-interview screen, not the technical interview — you're gathering enough breadth to pass a good candidate forward, not stress-testing them. Before accepting a skill or judgment claim, ask one light, curious follow-up in a casual tone — e.g. "Nice, what are 2-3 projects you've built with React?" or "Got it — any particular one that stands out?" — rather than moving straight on after a general statement. Frame it as genuine interest, not a test: a short "the more specific you can be here, the easier it is for us to shortlist you" is enough to make the reason clear without sounding like an interrogation. This is ONE follow-up per claim, never a second round. If their reply to that single follow-up is still thin or vague, do not push again — accept what you have, quietly note it as a soft spot for your eventual concerns/score, and move on to the next question. A claim never costs the candidate more than one extra question. Verifiable facts (location, degree, years, etc) are never subject to this follow-up — see classification above.`;
 
-    const hasSlotTemplate = Array.isArray(jobContext.interview_slots_template) && jobContext.interview_slots_template.length > 0;
+ const hasSlotTemplate = Array.isArray(jobContext.interview_slots_template) && jobContext.interview_slots_template.length > 0;
     const schedulingSection = hasSlotTemplate
       ? `\n\nINTERVIEW SCHEDULING: If you qualify this candidate, a set of real interview times will be shown to them right after this chat (a separate picker, not something you need to list yourself). In your closing message, if you qualify them, add a short line letting them know they'll see interview times to pick from next — do not invent, guess, or state specific dates/times yourself, and do not promise scheduling if you reject them or send them to needs_review.`
+      : "";
+
+    // Ground-truth contact extraction, run BEFORE the model sees anything.
+    // The model is unreliable at parsing a single comma/space-separated
+    // combo message ("email, name, phone" all in one line) and can end
+    // up asking for a field that's already sitting right there in the
+    // text. Scan for it ourselves and hand it over as a fact so the
+    // model has no excuse to re-ask.
+    const { data: existingContact } = await supabase
+      .from("candidates")
+      .select("name, email, phone")
+      .eq("id", candidateId)
+      .single();
+
+    const allUserText = messages
+      .filter((m: { role: string }) => m.role === "user")
+      .map((m: { content: string }) => m.content)
+      .join(" | ");
+
+    const detectedEmail = existingContact?.email || allUserText.match(/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/)?.[0] || null;
+    const detectedPhone = existingContact?.phone || allUserText.match(/(\+?\d[\d\s().-]{6,17}\d)/)?.[0]?.trim() || null;
+    const detectedName = existingContact?.name || null;
+
+    const contactSection = (detectedEmail || detectedPhone || detectedName)
+      ? `\n\nCONTACT INFO ALREADY CONFIRMED — do not ask for these again, only for whatever is still missing below:\nname: ${detectedName ?? "STILL MISSING"}\nemail: ${detectedEmail ?? "STILL MISSING"}\nphone: ${detectedPhone ?? "STILL MISSING"}`
       : "";
 
 
@@ -225,12 +250,12 @@ ABSOLUTE DEALBREAKERS (must have — if clearly missing, end the screening and l
 ${jobContext.must_haves}
 
 NICE TO HAVES (probe for these to raise the score, never reject solely for lacking them):
-${jobContext.nice_to_haves}
 ${claimTypeSection}
 ${cvSection}
 ${linkSection}
 ${rigorSection}
 ${schedulingSection}
+${contactSection}
 
 HOW TO RUN THE CONVERSATION:
 1. Collect the candidate's email, full name, and phone number before anything else — you need all three to keep a record. Ask for email first: it's the one most likely to eliminate itself as a later question (a bounced/invalid one can be caught immediately), so getting it early means the rest of the conversation can focus on the actual screening instead of circling back to contact details. If the candidate's first message already gave some but not all three (e.g. just a name, or name and email), your very next message must ask for whatever is STILL missing, ALL bundled into one message — e.g. "Thanks — could you also share your email and phone number?" — never chase them one field at a time across multiple separate messages. The only exception is the very first ask, which the opening greeting already handles by requesting all three together. The moment you learn or update any of the three — even mid-conversation, long before a final verdict — you MUST append a ###PROFILE### block (format given at the end of this prompt) after your reply, on every turn from that point until all three are known. This is not optional and is just as important as the reply text itself.
@@ -569,6 +594,51 @@ Include this block on every turn from the moment you first learn any of the thre
         .update(update)
         .eq("id", candidateId);
       if (error) console.error("🔥 COULD NOT SAVE DECISION:", error.message);
+    }
+
+   // Same class of stall as the empty-reply case below, but subtler:
+    // the model DID send text (e.g. "Thanks, John.") but rule 1a
+    // requires the framing line + first real question land in the SAME
+    // message profile info completes — nothing enforced that
+    // deterministically, so the model could stop short and leave the
+    // candidate needing to nudge it with a filler message before it
+    // continued. Detect "profile just became complete, but no question
+    // was asked" and force one retry, same mechanism as the empty-reply
+    // fix directly below.
+    const profileJustCompleted = !!(profileUpdate?.name && profileUpdate?.email && profileUpdate?.phone);
+    if (!decision && profileJustCompleted && aiResponseText && !aiResponseText.includes("?")) {
+      const nudgeMessages: ChatMessage[] = [
+        ...apiMessages,
+        { role: "assistant", content: rawText },
+        { role: "user", content: "[SYSTEM NOTE: your last reply confirmed the candidate's contact info but didn't include the required framing line and first screening question (rule 1a). Send a real follow-up now that includes both, in one message.]" },
+      ];
+      try {
+        const nudge = await getAIReply({ deepseekKey, geminiKey, messages: nudgeMessages, maxTokens: 900 });
+
+        const { error: nudgeUsageError } = await supabase.from("usage_events").insert({
+          source: "chat",
+          candidate_id: candidateId,
+          recruiter_id: jobContext?.recruiter_id ?? null,
+          job_id: jobContext?.id ?? null,
+          provider: nudge.provider,
+          model: nudge.model,
+          prompt_tokens: nudge.usage.promptTokens,
+          completion_tokens: nudge.usage.completionTokens,
+          total_tokens: nudge.usage.totalTokens,
+          cache_hit_tokens: nudge.usage.cacheHitTokens,
+          cache_miss_tokens: nudge.usage.cacheMissTokens,
+        });
+        if (nudgeUsageError) console.error("⚠️ COULD NOT LOG NUDGE USAGE EVENT:", nudgeUsageError.message);
+
+        let nudgeText = dedupeRepeatedSentences(nudge.text);
+        nudgeText = enforceSingleQuestion(nudgeText);
+        nudgeText = nudgeText.replace(/###DECISION###[\s\S]*?###END###/g, "").replace(/###PROFILE###[\s\S]*?###END###/g, "");
+        nudgeText = nudgeText.replace(/###(?:DECISION|PROFILE|END)(?:###)?/g, "").replace(/[-–—_]{3,}/g, " ").replace(/\s*[–—]\s*/g, ", ").replace(/\s{3,}/g, " ").trim();
+
+        if (nudgeText) aiResponseText = nudgeText;
+      } catch (err) {
+        console.error("⚠️ RULE-1A NUDGE RETRY FAILED:", (err as Error).message || err);
+      }
     }
 
     // Edge case: if the entire reply was the truncated JSON (nothing
