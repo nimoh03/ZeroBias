@@ -170,17 +170,19 @@ export async function POST(req: Request) {
 
     // has already been analyzed, so Nova can use it instead of re-asking
     // things the CV already answers.
-    const { data: candidateRow } = await supabase
-      .from("candidates")
-      .select("cv_summary")
-      .eq("id", candidateId)
-      .single();
+   const { data: candidateRow } = await supabase
+  .from("candidates")
+  .select("cv_summary, cv_url")
+  .eq("id", candidateId)
+  .single();
 
-    const cvSection = candidateRow?.cv_summary
-      ? `\n\nCV ALREADY ON FILE (verified from an uploaded resume — treat these as confirmed facts). Actively cross-check what the candidate tells you against it, especially claims tied to a dealbreaker above (school attended, years of experience, past employer, certifications, etc). If a claim is already covered by the CV summary below, don't ask them to re-upload or re-prove it — just note it's consistent (or silently accept it) and move on. If they mention something the CV summary doesn't cover, that's fine too — just confirm it the normal way, with a quick direct question, the same as you would for any other claim; don't demand the CV again for that. Only flag it as a concern if what they say directly contradicts the CV.\n${candidateRow.cv_summary}`
-      : jobContext.request_cv
-        ? `\n\nNo CV has been uploaded yet, and this role requires CVs to back up claims — this is not optional. The first time the candidate states a qualification, credential, or experience claim that maps to one of the dealbreakers above (a school, a certification, years of experience, a past employer), stop and ask them to attach their CV using the button next to the message box so you can verify it, before treating that claim as confirmed. Be direct about why: you need it on file to back up what they just told you. If they genuinely don't have one on hand, don't dead-end the conversation over it — note it as unverified, tell them briefly that it'll be flagged for the recruiter, and continue. Do not send a final ###DECISION### block until you've asked for the CV at least once in this conversation, unless the candidate has clearly said they don't have one to provide.`
-        : "";
+const cvSection = candidateRow?.cv_summary
+  ? `\n\nCV ALREADY ON FILE (verified from an uploaded resume — treat these as confirmed facts). Actively cross-check what the candidate tells you against it, especially claims tied to a dealbreaker above (school attended, years of experience, past employer, certifications, etc). If a claim is already covered by the CV summary below, don't ask them to re-upload or re-prove it — just note it's consistent (or silently accept it) and move on. If they mention something the CV summary doesn't cover, that's fine too — just confirm it the normal way, with a quick direct question, the same as you would for any other claim; don't demand the CV again for that. Only flag it as a concern if what they say directly contradicts the CV.\n${candidateRow.cv_summary}`
+  : candidateRow?.cv_url
+    ? `\n\nCV RECEIVED BUT NOT YET VERIFIED: the candidate has already uploaded a CV, but it couldn't be summarized (unreadable file or a processing issue) — this is not the candidate's fault. Do NOT ask them to attach or resend their CV again under any circumstances. Treat their claims the normal way, with a quick direct question same as anything else, and note in your eventual summary that the CV is on file but unverified so a human can check it manually.`
+    : jobContext.request_cv
+      ? `\n\nNo CV has been uploaded yet, and this role requires CVs to back up claims — this is not optional. The first time the candidate states a qualification, credential, or experience claim that maps to one of the dealbreakers above (a school, a certification, years of experience, a past employer), stop and ask them to attach their CV using the button next to the message box so you can verify it, before treating that claim as confirmed. Be direct about why: you need it on file to back up what they just told you. If they genuinely don't have one on hand, don't dead-end the conversation over it — note it as unverified, tell them briefly that it'll be flagged for the recruiter, and continue. Do not send a final ###DECISION### block until you've asked for the CV at least once in this conversation, unless the candidate has clearly said they don't have one to provide.`
+      : "";
 
     const claimTypeSection = `\n\nCLASSIFY EACH DEALBREAKER AND NICE-TO-HAVE BEFORE PROBING IT. As you go through the list above, silently sort each one into exactly one of two buckets — this decides HOW you check it, regardless of the screening style setting below:
 

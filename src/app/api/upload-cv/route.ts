@@ -139,10 +139,14 @@ export async function POST(req: Request) {
     }
 
     const { error: updateError } = await supabase
-      .from("candidates")
-      .update({ cv_url: cvUrl, ...(cvSummary ? { cv_summary: cvSummary } : {}) })
-      .eq("id", candidateId);
-
+  .from("candidates")
+  .update({
+    cv_url: cvUrl,
+    // Always overwrite — a null/failed summary on re-upload must
+    // clear the previous file's summary, not leave it stale.
+    cv_summary: cvSummary,
+  })
+  .eq("id", candidateId);
     if (updateError) {
       console.error("🔥 COULD NOT SAVE CV DATA:", updateError.message);
     }

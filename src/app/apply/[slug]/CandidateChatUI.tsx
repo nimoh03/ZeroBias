@@ -20,6 +20,15 @@ const DEBOUNCE_MS = 3000;
 // to slower replies (it only ever adds the remaining gap, never doubles up).
 const MIN_TYPING_MS = 1200;
 
+type ChatMessage = {
+  role: 'user' | 'assistant';
+  content: string;
+  // True for the one file-chip message created after a confirmed CV
+  // upload. Lets the bubble render as a file chip instead of prose —
+  // never set on anything the candidate actually typed.
+  isFile?: boolean;
+};
+
 export default function CandidateChatUI({ job, source }: { job: any; source?: string }) {
   const [inputText, setInputText] = useState("");
   const [isLoading, setIsLoading] = useState(false);
@@ -36,8 +45,12 @@ export default function CandidateChatUI({ job, source }: { job: any; source?: st
   const [hydrated, setHydrated] = useState(false);
   const [isDone, setIsDone] = useState(false);
   const [finalStatus, setFinalStatus] = useState<"qualified" | "rejected" | "needs_review" | null>(null);
-  const [cvFileName, setCvFileName] = useState<string | null>(null);
   const [isUploading, setIsUploading] = useState(false);
+  // File the candidate picked but hasn't confirmed sending yet. This is
+  // the only "attached" state now — once confirmCvUpload() runs it's
+  // cleared and the file chip message in `messages` is the sole record,
+  // so there's never a separate persistent "X attached" strip alongside it.
+  const [pendingCvFile, setPendingCvFile] = useState<File | null>(null);
   const [interviewSlots, setInterviewSlots] = useState<{ id: string; time: string; link: string }[]>([]);
   const [selectedSlot, setSelectedSlot] = useState<{ id: string; time: string; link: string } | null>(null);
   const [isBooking, setIsBooking] = useState(false);
@@ -48,13 +61,18 @@ export default function CandidateChatUI({ job, source }: { job: any; source?: st
 
   const storageKey = `${STORAGE_KEY_PREFIX}${job.public_slug}`;
   const companyName = job.profiles?.company_name || "the hiring team";
-  const greeting = {
+  const greeting: ChatMessage[] = [
+  {
     role: 'assistant',
-    content: `Hi, I'm Nova — an AI assistant handling the initial screening for ${companyName}. A member of the team reviews everything afterward. We're hiring for a ${job.title} based in ${job.location}. To get started, could I get your email, full name, and phone number?`
-  };
+    content: `Hi, I'm Nova, an AI assistant handling the initial screening for ${companyName} for the ${job.title} role.`,
+  },
+  {
+    role: 'assistant',
+    content: `A member of the team reviews everything afterward. To get started, could I get your email, full name, and phone number?`,
+  },
+];
 
-  const [messages, setMessages] = useState([greeting]);
-
+const [messages, setMessages] = useState<ChatMessage[]>(greeting);
   useEffect(() => {
     try {
       const saved = localStorage.getItem(storageKey);
@@ -64,7 +82,6 @@ export default function CandidateChatUI({ job, source }: { job: any; source?: st
         if (parsed.candidateId) setCandidateId(parsed.candidateId);
         if (parsed.isDone) setIsDone(parsed.isDone);
         if (parsed.finalStatus) setFinalStatus(parsed.finalStatus);
-        if (parsed.cvFileName) setCvFileName(parsed.cvFileName);
         if (parsed.interviewSlots) setInterviewSlots(parsed.interviewSlots);
         if (parsed.selectedSlot) setSelectedSlot(parsed.selectedSlot);
       }
@@ -79,15 +96,15 @@ export default function CandidateChatUI({ job, source }: { job: any; source?: st
   useEffect(() => {
     if (!hydrated) return;
     try {
-      localStorage.setItem(storageKey, JSON.stringify({ messages, candidateId, isDone, finalStatus, cvFileName, interviewSlots, selectedSlot }));
+      localStorage.setItem(storageKey, JSON.stringify({ messages, candidateId, isDone, finalStatus, interviewSlots, selectedSlot }));
     } catch (error) {
       console.error("Could not save conversation:", error);
     }
-  }, [messages, candidateId, isDone, finalStatus, cvFileName, interviewSlots, selectedSlot, hydrated, storageKey]);
+  }, [messages, candidateId, isDone, finalStatus, interviewSlots, selectedSlot, hydrated, storageKey]);
 
   useEffect(() => {
     scrollRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
-  }, [messages, isLoading, showTyping, interviewSlots, selectedSlot]);
+  }, [messages, isLoading, showTyping, interviewSlots, selectedSlot, pendingCvFile]);
 
   // Clear any pending debounced send if the candidate navigates away
   // mid-window — otherwise a stray timer could fire against an unmounted
@@ -154,7 +171,7 @@ export default function CandidateChatUI({ job, source }: { job: any; source?: st
   // handleSend has gone quiet, using whatever messages have accumulated
   // by then (could be one message, could be several rapid ones combined
   // into a single call/reply).
-  const sendToAI = async (allMessages: { role: string; content: string }[]) => {
+  const sendToAI = async (allMessages: ChatMessage[]) => {
     setIsLoading(true);
     const startedAt = Date.now();
 
@@ -236,7 +253,7 @@ export default function CandidateChatUI({ job, source }: { job: any; source?: st
     e.preventDefault();
     if (!inputText.trim() || isLoading || isDone) return;
 
-    const userMessage = { role: 'user', content: inputText };
+    const userMessage: ChatMessage = { role: 'user', content: inputText };
     setMessages(prev => [...prev, userMessage]);
     setInputText("");
     if (textareaRef.current) textareaRef.current.style.height = 'auto';
@@ -259,11 +276,22 @@ export default function CandidateChatUI({ job, source }: { job: any; source?: st
     }, DEBOUNCE_MS);
   };
 
-  const handleCvSelected = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  // Stage a picked file — nothing is uploaded or sent to chat yet. The
+  // candidate has to hit "Send" on the preview bar below the input
+  // before anything leaves the browser.
+  const handleCvSelected = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     e.target.value = "";
     if (!file || !candidateId || isUploading) return;
+    setPendingCvFile(file);
+  };
 
+  const cancelCvUpload = () => setPendingCvFile(null);
+
+  const confirmCvUpload = async () => {
+    const file = pendingCvFile;
+    if (!file || !candidateId || isUploading) return;
+    setPendingCvFile(null);
     setIsUploading(true);
     try {
       const formData = new FormData();
@@ -283,8 +311,10 @@ export default function CandidateChatUI({ job, source }: { job: any; source?: st
         return;
       }
 
-      setCvFileName(data.filename);
-      setMessages(prev => [...prev, { role: 'user', content: `Attached: ${data.filename}` }]);
+      // Single source of truth for "a CV was attached": one file-chip
+      // bubble in the transcript, WhatsApp-style. No separate persistent
+      // strip anywhere else — that was the duplicate.
+      setMessages(prev => [...prev, { role: 'user', content: data.filename, isFile: true }]);
     } catch (error) {
       console.error(error);
       setMessages(prev => [...prev, { role: 'assistant', content: "Something went wrong uploading that file. Please try again." }]);
@@ -334,7 +364,16 @@ export default function CandidateChatUI({ job, source }: { job: any; source?: st
                 ? 'bg-slate-900 text-white rounded-tr-sm'
                 : 'bg-slate-50 border border-slate-200 text-slate-800 rounded-tl-sm'
             }`}>
-              <p className="text-[15px] leading-relaxed whitespace-pre-wrap">{msg.content}</p>
+              {msg.isFile ? (
+                // File chip — just the filename, no "Attached:" prose.
+                // This is the only place an uploaded CV shows up.
+                <span className="flex items-center gap-2 text-[15px]">
+                  <FileText size={16} className="shrink-0" />
+                  <span className="truncate">{msg.content}</span>
+                </span>
+              ) : (
+                <p className="text-[15px] leading-relaxed whitespace-pre-wrap">{msg.content}</p>
+              )}
             </div>
           </div>
         ))}
@@ -432,6 +471,27 @@ export default function CandidateChatUI({ job, source }: { job: any; source?: st
           </form>
         ) : (
           <>
+            {/* Confirm-before-send preview — the only place an "attached"
+                file shows before it's actually uploaded. Cancel clears it
+                with no request ever made; Send is the one thing that
+                triggers confirmCvUpload(). */}
+            {pendingCvFile && (
+              <div className="flex items-center gap-2 mb-2 px-3 py-2 rounded-xl border border-slate-200 bg-slate-50">
+                <FileText size={16} className="text-slate-400 shrink-0" />
+                <span className="text-sm text-slate-700 truncate flex-1">{pendingCvFile.name}</span>
+                <button type="button" onClick={cancelCvUpload} className="text-xs font-medium text-slate-500 hover:text-slate-700 px-2 py-1">
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={confirmCvUpload}
+                  disabled={isUploading}
+                  className="text-xs font-semibold text-white bg-primary rounded-full px-3 py-1.5 disabled:opacity-50"
+                >
+                  {isUploading ? "Sending…" : "Send"}
+                </button>
+              </div>
+            )}
             <form onSubmit={handleSend} className="relative flex items-end">
               <input
                 ref={fileInputRef}
@@ -483,11 +543,6 @@ export default function CandidateChatUI({ job, source }: { job: any; source?: st
                 <Send size={16} className="ml-0.5" />
               </button>
             </form>
-            {cvFileName && (
-              <p className="text-center text-[11px] font-medium text-slate-400 mt-2 flex items-center justify-center gap-1">
-                <FileText size={11} /> {cvFileName} attached
-              </p>
-            )}
           </>
         )}
       </div>
