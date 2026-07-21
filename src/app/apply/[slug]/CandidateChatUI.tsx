@@ -68,7 +68,11 @@ export default function CandidateChatUI({ job, source }: { job: any; source?: st
   },
   {
     role: 'assistant',
-    content: `A member of the team reviews everything afterward. To get started, could I get your email, full name, and phone number?`,
+    content: `A member of the team reviews everything afterward.`,
+  },
+  {
+    role: 'assistant',
+    content: `To get started, could I get your email, full name, and phone number?`,
   },
 ];
 
