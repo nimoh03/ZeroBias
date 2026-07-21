@@ -182,7 +182,7 @@ export default async function AnalyticsPage() {
           ) : (
             <div className="flex items-end gap-1.5 md:gap-2 h-48">
               {days.map((d, i) => (
-                <div key={i} className="flex-1 flex flex-col items-center justify-end gap-2 group">
+                <div key={i} className="flex-1 h-full flex flex-col items-center justify-end gap-2 group">
                   <span className="text-[10px] font-bold text-slate-400 opacity-0 group-hover:opacity-100 transition-opacity">
                     {d.count}
                   </span>

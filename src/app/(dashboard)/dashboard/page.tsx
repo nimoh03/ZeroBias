@@ -196,9 +196,9 @@ export default async function DashboardOverview() {
                 <p className="text-sm font-medium text-slate-500">No recent activity yet.<br/>Your AI assistant is waiting.</p>
               </div>
             )}
-            <button className="w-full py-3.5 bg-slate-50 text-sm font-bold text-slate-500 hover:text-primary transition-colors border-t border-slate-200">
+            <Link href="/candidates" className="w-full py-3.5 bg-slate-50 text-sm font-bold text-slate-500 hover:text-primary transition-colors border-t border-slate-200 flex items-center justify-center">
               View Full Activity Log
-            </button>
+            </Link>
           </div>
         </aside>
 

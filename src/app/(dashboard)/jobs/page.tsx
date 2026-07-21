@@ -2,21 +2,38 @@ import { createClient } from "@/utils/supabase/server";
 import Link from "next/link";
 import { 
   Plus, MoreVertical, Link as LinkIcon, 
-  MapPin, Briefcase, Pencil, FolderOpen, Users
+  MapPin, Briefcase, Pencil, FolderOpen, Users,
+  ChevronLeft, ChevronRight
 } from "lucide-react";
 import CopyLinkButton from "@/components/CopyLinkButton";
 import JobStatusToggle from "./JobStatusToggle";
 
-export default async function JobsPage() {
+const PAGE_SIZE = 10;
+
+export default async function JobsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ page?: string }>;
+}) {
+  const { page } = await searchParams;
+  const currentPage = Math.max(1, Number(page) || 1);
+  const rangeStart = (currentPage - 1) * PAGE_SIZE;
+  const rangeEnd = rangeStart + PAGE_SIZE - 1;
+
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
 
-  // Fetch jobs ordered by newest first
-  const { data: jobs } = await supabase
+  // Fetch jobs ordered by newest first, one page at a time — count:
+  // 'exact' returns the total alongside the page so pagination controls
+  // know how many pages exist without a second round trip.
+  const { data: jobs, count: totalCount } = await supabase
     .from('jobs')
-    .select('*')
+    .select('*', { count: 'exact' })
     .eq('recruiter_id', user?.id)
-    .order('created_at', { ascending: false });
+    .order('created_at', { ascending: false })
+    .range(rangeStart, rangeEnd);
+
+  const totalPages = Math.max(1, Math.ceil((totalCount ?? 0) / PAGE_SIZE));
 
   const hasJobs = jobs && jobs.length > 0;
 
@@ -54,6 +71,7 @@ export default async function JobsPage() {
 
       {/* Jobs List */}
       {hasJobs ? (
+        <>
         <div className="grid grid-cols-1 gap-4">
           {jobs.map((job) => (
             <div 
@@ -118,8 +136,22 @@ export default async function JobsPage() {
             </div>
           ))}
         </div>
+
+        {totalPages > 1 && (
+          <div className="flex items-center justify-between mt-6 px-1">
+            <span className="text-sm text-slate-500">Page {currentPage} of {totalPages}</span>
+            <div className="flex gap-2">
+              <Link href={`/jobs?page=${currentPage - 1}`} aria-disabled={currentPage <= 1} className={`flex items-center gap-1 px-3 py-1.5 border border-slate-200 rounded-lg text-sm font-bold transition-colors ${currentPage <= 1 ? 'opacity-40 pointer-events-none' : 'hover:bg-slate-50'}`}>
+                <ChevronLeft size={14} /> Previous
+              </Link>
+              <Link href={`/jobs?page=${currentPage + 1}`} aria-disabled={currentPage >= totalPages} className={`flex items-center gap-1 px-3 py-1.5 border border-slate-200 rounded-lg text-sm font-bold transition-colors ${currentPage >= totalPages ? 'opacity-40 pointer-events-none' : 'hover:bg-slate-50'}`}>
+                Next <ChevronRight size={14} />
+              </Link>
+            </div>
+          </div>
+        )}
+        </>
       ) : (
-        /* Graceful Empty State */
         <div className="bg-white border border-slate-200 rounded-3xl p-10 min-h-[400px] flex flex-col items-center justify-center text-center shadow-sm">
           <div className="w-20 h-20 bg-slate-50 rounded-2xl flex items-center justify-center text-slate-300 shadow-inner mb-6 border border-slate-100">
             <FolderOpen size={36} strokeWidth={1.5} />
