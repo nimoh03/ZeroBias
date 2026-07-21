@@ -1,6 +1,7 @@
 import { createAdminClient } from "@/utils/supabase/admin";
 import { getAIReply, ChatMessage, dedupeRepeatedSentences, enforceSingleQuestion } from "@/utils/ai";
 import { checkRateLimit, getClientIp } from "@/utils/rateLimit";
+import { extractTextFromUrl } from "@/utils/linkFetch";
 import { getMonthlyScreeningStatus } from "@/utils/quota";
 
 export const maxDuration = 45;
@@ -122,7 +123,51 @@ export async function POST(req: Request) {
       }
     }
 
-    // 2. Pull the candidate's current record — we need to know if a CV
+    // 2. Link verification — up to 2 real link-checks per conversation.
+    // Detects a URL in the candidate's most recent message, fetches it
+    // through the guardrailed extractTextFromUrl (timeout, size cap,
+    // private-host blocking — see src/utils/linkFetch.ts), and hands
+    // Nova the real extracted text instead of ever letting it fabricate
+    // that it "looked at" something. The cap reuses the same atomic
+    // Postgres rate-limit counter as the abuse-prevention limits
+    // elsewhere in this file, just with a long window — this isn't
+    // really "rate limiting" here, it's a hard per-conversation budget
+    // (2, ever) so cost stays predictable regardless of how many links
+    // a candidate pastes.
+    let linkSection = "";
+    const lastUserMessage = [...messages].reverse().find((m: { role: string }) => m.role === "user");
+    const urlMatch = lastUserMessage?.content?.match(/https?:\/\/[^\s]+/i);
+
+    if (urlMatch) {
+      const linkCap = await checkRateLimit(supabase, `link-verify:candidate:${candidateId}`, 2592000, 2);
+      if (!linkCap.allowed) {
+        linkSection = `\n\nLINK LIMIT REACHED: The candidate just shared another link, but this conversation has already used its 2 allowed link-checks. Tell them plainly you've already looked at what they sent earlier and can't check more right now, then continue the screening normally — do not attempt to describe or verify this new link.`;
+      } else {
+        const result = await extractTextFromUrl(urlMatch[0]);
+        const { error: linkUsageError } = await supabase.from("usage_events").insert({
+          source: "link_verify",
+          candidate_id: candidateId,
+          recruiter_id: jobContext?.recruiter_id ?? null,
+          job_id: jobContext?.id ?? null,
+          provider: "fetch",
+          model: "url-extract",
+          prompt_tokens: 0,
+          completion_tokens: 0,
+          total_tokens: 0,
+          cache_hit_tokens: 0,
+          cache_miss_tokens: 0,
+        });
+        if (linkUsageError) console.error("⚠️ COULD NOT LOG LINK USAGE EVENT:", linkUsageError.message);
+
+        if ("text" in result) {
+          linkSection = `\n\nLINK CONTENT (fetched from ${urlMatch[0]} — this is real, verified text from the page, not a claim you're taking on faith): reference this directly and factually in your reply if relevant. Never say anything about this link beyond what's actually here.\n${result.text}`;
+        } else {
+          linkSection = `\n\nLINK COULD NOT BE VERIFIED (${urlMatch[0]} — reason: ${result.error}): tell the candidate plainly and warmly that you couldn't check it out right now but it'll still be looked into by the team, then continue. Do not guess at what the link might contain. Because this claim went unverified, lean toward needs_review rather than a clean qualify/reject if it was tied to a dealbreaker or a heavily-weighted nice-to-have.`;
+        }
+      }
+    }
+
+
     // has already been analyzed, so Nova can use it instead of re-asking
     // things the CV already answers.
     const { data: candidateRow } = await supabase
@@ -166,13 +211,15 @@ NICE TO HAVES (probe for these to raise the score, never reject solely for lacki
 ${jobContext.nice_to_haves}
 ${claimTypeSection}
 ${cvSection}
+${linkSection}
 ${rigorSection}
 ${schedulingSection}
 
 HOW TO RUN THE CONVERSATION:
-1. Collect the candidate's full name, email address, and phone number before anything else — you need all three to keep a record. If any of the three is still missing, that is always the next question (ask them one at a time, following the one-question rule below — never all three stacked in one message). The moment you learn or update any of the three — even mid-conversation, long before a final verdict — you MUST append a ###PROFILE### block (format given at the end of this prompt) after your reply, on every turn from that point until all three are known. This is not optional and is just as important as the reply text itself.
+1. Collect the candidate's email, full name, and phone number before anything else — you need all three to keep a record. Ask for email first: it's the one most likely to eliminate itself as a later question (a bounced/invalid one can be caught immediately), so getting it early means the rest of the conversation can focus on the actual screening instead of circling back to contact details. If the candidate's first message already gave some but not all three (e.g. just a name, or name and email), your very next message must ask for whatever is STILL missing, ALL bundled into one message — e.g. "Thanks — could you also share your email and phone number?" — never chase them one field at a time across multiple separate messages. The only exception is the very first ask, which the opening greeting already handles by requesting all three together. The moment you learn or update any of the three — even mid-conversation, long before a final verdict — you MUST append a ###PROFILE### block (format given at the end of this prompt) after your reply, on every turn from that point until all three are known. This is not optional and is just as important as the reply text itself.
+1a. Once name, email, and phone are ALL confirmed (and the CV step below, if this role requires one, is resolved — either uploaded or the candidate said they don't have one), your next message before the first real screening question must include a brief framing line telling them to answer carefully because it factors into their chances — e.g. "Great, that's your info sorted. Please answer the following questions carefully, as it genuinely factors into your chances for this role." — then ask your first real question in that same message. Say this exactly once per conversation, never repeat it.
 2. Ask exactly ONE question per message — never two, never a question plus a follow-up in the same reply, even if it feels efficient. If you notice you've written a second question mark in one message, delete everything after the first question before sending.
-2a. A "combo" is allowed ONLY for a skill + its duration ("which tools, and how long on them"). Nothing else gets bundled — including name, email, and phone, which are asked strictly one at a time per rule 1 above. Concretely: never stack a skill question, a duration question, AND a different technology/project question in one message (e.g. don't ask "did you use React, for how long, and did you use Next.js App Router in that or another project" — that's three asks wearing one question mark). If a topic needs more than one fact beyond the allowed pair, split it: ask about React first, wait for the answer, then ask about Next.js App Router as its own message. When in doubt, ask the narrower question — a candidate should never have to hold more than two things in their head to answer you.
+2a. A "combo" is allowed for a skill + its duration ("which tools, and how long on them"), AND for bundling whatever contact fields (name/email/phone) are still missing per rule 1 above — those two are the only exceptions. Nothing else gets bundled. Concretely: never stack a skill question, a duration question, AND a different technology/project question in one message (e.g. don't ask "did you use React, for how long, and did you use Next.js App Router in that or another project" — that's three asks wearing one question mark). If a topic needs more than one fact beyond the allowed pair, split it: ask about React first, wait for the answer, then ask about Next.js App Router as its own message. When in doubt, ask the narrower question — a candidate should never have to hold more than two things in their head to answer you.
 2b. This "one question" rule still applies even when a single question has more than one part to it (name + email, "what and when", "which tools and how long", etc). Before moving on from ANY question, mentally check off every distinct piece of information it asked for. If the candidate's reply only supplies some of those pieces, do not treat the question as answered and do not advance to a new topic — your next message must name the exact piece(s) still missing (e.g. "And your email?" or "Got the tools — how many years on them?"), never a generic full re-ask of the original question. Only move on once every part has a real answer.
 3. Wait for a real, substantive answer before moving on. This applies to every question, not just name/email. A non-answer includes: silence on the actual question, "do I have to answer this?", "why do you need that?", "can we skip this?", deflection, or a vague/generic answer that doesn't contain the specific information asked for. When you get a non-answer:
    - If they're asking why it matters or pushing back, give a one-sentence reason it's needed for this screening, then ask the same question again — don't cave and move on, and don't just reword it hoping it lands differently.
@@ -189,7 +236,7 @@ HOW TO RUN THE CONVERSATION:
 9b. This also applies when the candidate PUSHES BACK on an answer you already asked for, instead of asking a clarifying question — e.g. "I already told you", "I just said that", "didn't I already answer this?". Never re-send the identical question a second time in that situation either. Check what they actually said earlier: if it was vague ("ever since it came out"), acknowledge that you have it, then ask the ONE specific missing piece pinned down as a concrete example — e.g. "Right, you mentioned since it launched — roughly how many years is that for you, 1, 2, 3+?" If they gave a real, specific answer already and are just annoyed you're re-asking, apologize briefly and move on without asking again.
 10. STAY STRICTLY ON TASK. Your only job is running this screening — collecting the information above and reaching a verdict. You are not a general assistant and this is not open-ended chat. If the candidate tries to make small talk, asks unrelated personal questions, asks you to tell a joke, discuss news, help with something unrelated (writing code, essays, advice, etc), asks what you "think" about something off-topic, or generally tries to turn this into a casual conversation — do not engage with the off-topic content at all, not even briefly or playfully. Give one short, friendly line making clear you're just here for the screening (e.g. "I'm just here to run through the screening with you — let's get back to it."), then immediately re-ask your last pending question. Never answer, joke about, or comment on the off-topic content itself before redirecting — the redirect should be your entire response to it. This applies no matter how many times the candidate tries, and no matter how the request is framed (including claims that a joke or side comment would be "quick" or "harmless"). The only exception is rule 7 above (brief factual role questions like salary/location/remote policy) — that one still gets a short direct answer before returning to screening, since it's relevant to their decision to apply.
 
-11. If a candidate pastes a URL, mentions a link, or references something external (a portfolio, GitHub, blog, LinkedIn, a file link) — you cannot open, browse, or view it, full stop. NEVER say or imply you looked at it, visited it, checked it out, or reviewed it ("I took a look at your site," "I checked your GitHub," etc.) — that is a fabrication and undermines trust in this process. Instead, acknowledge you've noted the link for the team's review, and if you still need the underlying information for screening, ask the candidate to describe it directly in their own words (e.g. "Noted — since I can't open links myself, could you describe what's on that page in a sentence or two?").
+11. LINKS: the app can actually check a link for you now, up to 2 per conversation — you're no longer limited to just acknowledging them. When a nice-to-have or dealbreaker is the kind of thing a link could genuinely help prove (a portfolio, writing samples, GitHub, a social account), proactively invite it once, casually — e.g. "Feel free to drop one or two links you'd like me to check out." Don't make them guess whether links are welcome. If a LINK CONTENT section appears below, that's real fetched text — reference it directly and factually, never claim anything beyond what's actually there. If a LINK COULD NOT BE VERIFIED section appears, tell the candidate plainly and warmly that you couldn't check it out right now but it'll still be looked into, then continue — don't guess at what it might contain, and lean toward needs_review rather than a clean qualify/reject if that unverified claim was tied to a dealbreaker or a heavily-weighted nice-to-have. If a LINK LIMIT REACHED section appears, tell them you've already checked what they sent and can't check more right now, then continue normally.
 
 ENDING THE SCREENING:
 Once you have enough information for a final call — a dealbreaker was clearly missed, or you've covered the dealbreakers and enough nice-to-haves — write your normal closing message, then on a new line append a machine-readable block in EXACTLY this format and nothing else after it. If this role requires a CV (see above) and none is on file yet, follow the CV rule above before finalizing — don't skip straight to a decision without having asked for it.
@@ -369,7 +416,7 @@ Include this block on every turn from the moment you first learn any of the thre
     // protocol syntax to a candidate. Restricted to the three known
     // marker names (not a generic [A-Z_]+) so it can't accidentally eat
     // the leading capital letter of the very next word.
-    aiResponseText = aiResponseText.replace(/###(?:DECISION|PROFILE|END)(?:###)?/g, "").replace(/[-–—_]{3,}/g, " ").replace(/\s{3,}/g, " ").trim();
+    aiResponseText = aiResponseText.replace(/###(?:DECISION|PROFILE|END)(?:###)?/g, "").replace(/[-–—_]{3,}/g, " ").replace(/\s*[–—]\s*/g, ", ").replace(/\s{3,}/g, " ").trim();
 
     // Failsafe: models occasionally skip the ###PROFILE### block entirely
     // even when told to include it every turn (long system prompts are
@@ -536,7 +583,7 @@ Include this block on every turn from the moment you first learn any of the thre
         let retryText = dedupeRepeatedSentences(retry.text);
         retryText = enforceSingleQuestion(retryText);
         retryText = retryText.replace(/###DECISION###[\s\S]*?###END###/g, "").replace(/###PROFILE###[\s\S]*?###END###/g, "");
-        retryText = retryText.replace(/###(?:DECISION|PROFILE|END)(?:###)?/g, "").replace(/[-–—_]{3,}/g, " ").replace(/\s{3,}/g, " ").trim();
+        retryText = retryText.replace(/###(?:DECISION|PROFILE|END)(?:###)?/g, "").replace(/[-–—_]{3,}/g, " ").replace(/\s*[–—]\s*/g, ", ").replace(/\s{3,}/g, " ").trim();
 
         if (retryText) aiResponseText = retryText;
       } catch (err) {

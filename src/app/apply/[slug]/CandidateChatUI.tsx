@@ -50,7 +50,7 @@ export default function CandidateChatUI({ job, source }: { job: any; source?: st
   const companyName = job.profiles?.company_name || "the hiring team";
   const greeting = {
     role: 'assistant',
-    content: `Hi, I'm Nova — an AI assistant handling the initial screening for ${companyName}. A member of the team reviews everything afterward. We're hiring for a ${job.title} based in ${job.location}. To get started, could I get your full name, email, and phone number?`
+    content: `Hi, I'm Nova — an AI assistant handling the initial screening for ${companyName}. A member of the team reviews everything afterward. We're hiring for a ${job.title} based in ${job.location}. To get started, could I get your email, full name, and phone number?`
   };
 
   const [messages, setMessages] = useState([greeting]);

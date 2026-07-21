@@ -1,10 +1,10 @@
 import {
-  Search, Filter, Briefcase, ChevronRight,
+  Briefcase, ChevronRight,
   XCircle, Clock, Sparkles, ChevronLeft
 } from 'lucide-react';
 import Link from 'next/link';
 import { createClient } from '@/utils/supabase/server';
-import StatusFilterSelect from './StatusFilterSelect';
+import CandidateFilters from './CandidateFilters';
 import CandidateRow from './CandidateRow';
 
 const PAGE_SIZE = 15;
@@ -117,27 +117,7 @@ export default async function CandidatesList({
       </div>
 
       {/* Filters & Search */}
-      <form method="GET" className="grid grid-cols-1 md:grid-cols-12 gap-4">
-        <div className="md:col-span-6 bg-surface-container-lowest p-4 rounded-xl border border-outline-variant flex items-center gap-3 shadow-sm">
-          <Search className="text-outline shrink-0" size={20} />
-          <input
-            type="text"
-            name="q"
-            defaultValue={q}
-            placeholder="Search by name or job title..."
-            className="bg-transparent border-none focus:ring-0 w-full text-sm outline-none placeholder:text-outline text-on-surface"
-          />
-        </div>
-        <div className="md:col-span-3 relative">
-          <StatusFilterSelect name="status" defaultValue={status || 'all'} options={statusOptions} />
-          <Filter className="absolute left-4 top-1/2 -translate-y-1/2 text-outline-variant pointer-events-none" size={18} />
-        </div>
-        <div className="md:col-span-3 relative">
-          <StatusFilterSelect name="job" defaultValue={job || 'all'} options={jobOptions} />
-          <Briefcase className="absolute left-4 top-1/2 -translate-y-1/2 text-outline-variant pointer-events-none" size={18} />
-        </div>
-        <button type="submit" className="hidden" aria-hidden="true" />
-      </form>
+      <CandidateFilters q={q} status={status} job={job} statusOptions={statusOptions} jobOptions={jobOptions} />
 
       {/* Candidates Table */}
       <div className="bg-surface-container-lowest rounded-xl border border-outline-variant shadow-sm overflow-hidden">
