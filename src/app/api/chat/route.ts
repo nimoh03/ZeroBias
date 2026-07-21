@@ -6,6 +6,21 @@ import { getMonthlyScreeningStatus } from "@/utils/quota";
 
 export const maxDuration = 45;
 
+// Single source of truth for stripping em/en dashes and stray dash-runs
+// out of anything candidate-facing. The AI's own reply gets this applied
+// mid-pipeline already, but literal fallback/error strings we write by
+// hand never went through that step — so this same helper is now also
+// called as a guaranteed final pass right before every response leaves
+// the route (see call sites below), regardless of whether the text came
+// from the model or was hardcoded here.
+function stripDashes(text: string): string {
+  return text
+    .replace(/[-–—_]{3,}/g, " ")
+    .replace(/\s*[–—]\s*/g, ", ")
+    .replace(/\s{3,}/g, " ")
+    .trim();
+}
+
 export async function POST(req: Request) {
   try {
    const { messages, jobContext, candidateId: incomingCandidateId, source } = await req.json();
@@ -25,7 +40,7 @@ export async function POST(req: Request) {
       const { allowed } = await checkRateLimit(supabase, `chat:new-candidate:${clientIp}`, 3600, 20);
       if (!allowed) {
         return Response.json(
-          { text: "Too many requests from this connection right now — please try again in a bit." },
+          { text: "Too many requests from this connection right now, please try again in a bit." },
           { status: 429 }
         );
       }
@@ -49,7 +64,7 @@ export async function POST(req: Request) {
           // from allowing further messages in this conversation (same
           // mechanism as a normal screening completion).
           return Response.json({
-            text: "Thanks for your interest — this role isn't currently accepting new applications. Please check back soon.",
+            text: "Thanks for your interest. This role isn't currently accepting new applications right now, please check back soon.",
             done: true,
             status: "closed",
           });
@@ -91,7 +106,7 @@ export async function POST(req: Request) {
       const { allowed } = await checkRateLimit(supabase, `chat:candidate:${candidateId}`, 180, 30);
       if (!allowed) {
         return Response.json(
-          { text: "You're sending messages a bit fast — give it a moment and try again." },
+          { text: "You're sending messages a bit fast, give it a moment and try again." },
           { status: 429 }
         );
       }
@@ -417,7 +432,11 @@ Include this block on every turn from the moment you first learn any of the thre
     // quirk we haven't seen yet), strip it rather than ever show raw
     // protocol syntax to a candidate. Restricted to the three known
     // marker names (not a generic [A-Z_]+) so it can't accidentally eat
-    // the leading capital letter of the very next word.
+    // the leading capital letter of the very next word. Dash-stripping
+    // here is a mid-pipeline pass, not the final guarantee — see the
+    // stripDashes() call right before the response is built, which
+    // catches everything appended after this point too (email/phone
+    // confirmation prompts, the empty-reply fallback, etc).
     aiResponseText = aiResponseText.replace(/###(?:DECISION|PROFILE|END)(?:###)?/g, "").replace(/[-–—_]{3,}/g, " ").replace(/\s*[–—]\s*/g, ", ").replace(/\s{3,}/g, " ").trim();
 
     // Failsafe: models occasionally skip the ###PROFILE### block entirely
@@ -467,13 +486,16 @@ Include this block on every turn from the moment you first learn any of the thre
     // the TLD — passes right through both). A malformed email saved
     // silently means the recruiter can never actually reach this
     // candidate. Catch it here, drop it from this save, and prompt the
-    // candidate to confirm it on their next turn instead.
+    // candidate to confirm it on their next turn instead. These two
+    // appended strings used to contain a raw em dash themselves — fixed
+    // directly here, and also now caught by the final stripDashes() pass
+    // below regardless.
     const EMAIL_RE = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
     if (profileUpdate?.email && !EMAIL_RE.test(profileUpdate.email)) {
       console.error("⚠️ MALFORMED EMAIL CAUGHT, NOT SAVING:", profileUpdate.email);
       profileUpdate = { ...profileUpdate, email: null };
       aiResponseText += aiResponseText.endsWith(".") || aiResponseText.endsWith("?")
-        ? " Quick check — that email didn't look quite right, could you confirm it?"
+        ? " Quick check, that email didn't look quite right, could you confirm it?"
         : " Also, could you confirm your email? It didn't look quite right.";
     }
 
@@ -552,7 +574,7 @@ Include this block on every turn from the moment you first learn any of the thre
     // Edge case: if the entire reply was the truncated JSON (nothing
     // else survived stripping), the model sent a turn with no actual
     // question or acknowledgment — this used to just show static filler
-    // ("Thanks — give me one moment.") and silently wait for the
+    // ("Thanks, give me one moment.") and silently wait for the
     // candidate to send another message before recovering, which reads
     // as the conversation randomly stalling. Instead, give the model one
     // real extra shot at producing an actual message before ever
@@ -594,8 +616,16 @@ Include this block on every turn from the moment you first learn any of the thre
     }
 
     if (!aiResponseText) {
-      aiResponseText = "Thanks — give me one moment.";
+      aiResponseText = "Thanks, give me one moment.";
     }
+
+    // Guaranteed final pass — runs after every possible append above
+    // (email/phone confirmation prompts, the retry branch, the empty-
+    // reply fallback) so nothing added later in this function can ever
+    // reintroduce a dash that slipped past the mid-pipeline cleanup.
+    // This is the permanent fix: not a stronger prompt rule, an
+    // unconditional last transform on whatever actually leaves the route.
+    aiResponseText = stripDashes(aiResponseText);
 
     // 6. Save the assistant's reply (candidate-facing text only).
     const { error: assistantSaveError } = await supabase.from("transcripts").insert({
@@ -618,7 +648,7 @@ Include this block on every turn from the moment you first learn any of the thre
   } catch (error: any) {
     console.error("🔥 ROUTE CRASHED:", error.message || error);
     return Response.json(
-      { text: "Sorry — having trouble connecting right now. Could you try again in a moment?" },
+      { text: "Sorry, having trouble connecting right now. Could you try again in a moment?" },
       { status: 500 }
     );
   }
