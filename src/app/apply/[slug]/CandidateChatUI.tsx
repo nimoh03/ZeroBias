@@ -68,10 +68,6 @@ export default function CandidateChatUI({ job, source }: { job: any; source?: st
   },
   {
     role: 'assistant',
-    content: `A member of the team reviews everything afterward.`,
-  },
-  {
-    role: 'assistant',
     content: `To get started, could I get your email, full name, and phone number?`,
   },
 ];
@@ -318,7 +314,13 @@ const [messages, setMessages] = useState<ChatMessage[]>(greeting);
       // Single source of truth for "a CV was attached": one file-chip
       // bubble in the transcript, WhatsApp-style. No separate persistent
       // strip anywhere else — that was the duplicate.
-      setMessages(prev => [...prev, { role: 'user', content: data.filename, isFile: true }]);
+      const fileMessage: ChatMessage = { role: 'user', content: data.filename, isFile: true };
+      setShowTyping(true);
+      setMessages(prev => {
+        const updated = [...prev, fileMessage];
+        sendToAI(updated);
+        return updated;
+      });
     } catch (error) {
       console.error(error);
       setMessages(prev => [...prev, { role: 'assistant', content: "Something went wrong uploading that file. Please try again." }]);
@@ -385,9 +387,10 @@ const [messages, setMessages] = useState<ChatMessage[]>(greeting);
         {showTyping && (
           <div className="flex gap-3">
             <div className="w-8 h-8 shrink-0 rounded-full bg-primary flex items-center justify-center text-white text-xs font-bold">N</div>
-            <div className="px-4 py-3 rounded-2xl bg-slate-50 border border-slate-200 rounded-tl-sm flex items-center gap-2">
-              <Loader2 size={15} className="animate-spin text-slate-400" />
-              <span className="text-sm text-slate-500">Typing...</span>
+            <div className="px-4 py-3 rounded-2xl bg-slate-50 border border-slate-200 rounded-tl-sm flex items-center gap-1">
+              <span className="w-2 h-2 rounded-full bg-slate-400 animate-bounce [animation-delay:-0.3s]" />
+              <span className="w-2 h-2 rounded-full bg-slate-400 animate-bounce [animation-delay:-0.15s]" />
+              <span className="w-2 h-2 rounded-full bg-slate-400 animate-bounce" />
             </div>
           </div>
         )}
