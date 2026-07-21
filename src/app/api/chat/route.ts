@@ -196,7 +196,7 @@ const cvSection = candidateRow?.cv_summary
   : candidateRow?.cv_url
     ? `\n\nCV RECEIVED BUT NOT YET VERIFIED: the candidate has already uploaded a CV, but it couldn't be summarized (unreadable file or a processing issue) — this is not the candidate's fault. Do NOT ask them to attach or resend their CV again under any circumstances. Treat their claims the normal way, with a quick direct question same as anything else, and note in your eventual summary that the CV is on file but unverified so a human can check it manually.`
     : jobContext.request_cv
-      ? `\n\nNo CV has been uploaded yet, and this role requires CVs to back up claims — this is not optional. The first time the candidate states a qualification, credential, or experience claim that maps to one of the dealbreakers above (a school, a certification, years of experience, a past employer), stop and ask them to attach their CV using the button next to the message box so you can verify it, before treating that claim as confirmed. Be direct about why: you need it on file to back up what they just told you. If they genuinely don't have one on hand, don't dead-end the conversation over it — note it as unverified, tell them briefly that it'll be flagged for the recruiter, and continue. Do not send a final ###DECISION### block until you've asked for the CV at least once in this conversation, unless the candidate has clearly said they don't have one to provide.`
+      ? `\n\nNo CV has been uploaded yet, and this role requires CVs to back up claims — this is not optional. As soon as name, email, and phone are all confirmed, before asking your first real screening question, ask the candidate to attach their CV using the button next to the message box. Keep this ask short — something like "Could you also attach your CV using the button next to the message box?" — no need to explain why you need it. If they say they don't have one on hand, don't dead-end the conversation over it — note it as unverified, tell them briefly that it'll be flagged for the recruiter, and move straight into the first screening question instead. Do not send a final ###DECISION### block without having asked for the CV at least once in this conversation, unless the candidate has clearly said they don't have one.`
       : "";
 
     const claimTypeSection = `\n\nCLASSIFY EACH DEALBREAKER AND NICE-TO-HAVE BEFORE PROBING IT. As you go through the list above, silently sort each one into exactly one of two buckets — this decides HOW you check it, regardless of the screening style setting below:
@@ -234,7 +234,29 @@ If you're unsure which bucket something falls into, default to treating it as a 
 
     const detectedEmail = existingContact?.email || allUserText.match(/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/)?.[0] || null;
     const detectedPhone = existingContact?.phone || allUserText.match(/(\+?\d[\d\s().-]{6,17}\d)/)?.[0]?.trim() || null;
-    const detectedName = existingContact?.name || null;
+    // Name has no fixed pattern like email/phone do, so it was never
+    // getting a ground-truth fallback — only ever came from the DB after
+    // the model itself had already parsed and saved one. That left combo
+    // messages with no separators ("abel abel@gmail.com 08144552405")
+    // entirely up to the model, with no safety net if it misparsed.
+    // Heuristic: strip out whatever we just matched as email/phone from
+    // the raw text; if a short, alphabetic-looking chunk is left over,
+    // treat that as the name. Only trust this on the candidate's first
+    // message — later messages can contain all sorts of alphabetic text
+    // (job history, skills, etc.) that would false-positive as a name.
+    let detectedName = existingContact?.name || null;
+    if (!detectedName) {
+      const firstUserMessage = messages.find((m: { role: string }) => m.role === "user")?.content || "";
+      let remainder = firstUserMessage;
+      if (detectedEmail) remainder = remainder.replace(detectedEmail, " ");
+      if (detectedPhone) remainder = remainder.replace(detectedPhone, " ");
+      remainder = remainder.replace(/[,|]/g, " ").replace(/\s{2,}/g, " ").trim();
+      // Name-shaped: 1-4 words, letters/spaces/hyphens/apostrophes only,
+      // nothing that looks like leftover punctuation or a stray fragment.
+      if (remainder && /^[a-zA-Z][a-zA-Z'-]*(\s[a-zA-Z][a-zA-Z'-]*){0,3}$/.test(remainder)) {
+        detectedName = remainder;
+      }
+    }
 
     const contactSection = (detectedEmail || detectedPhone || detectedName)
       ? `\n\nCONTACT INFO ALREADY CONFIRMED — do not ask for these again, only for whatever is still missing below:\nname: ${detectedName ?? "STILL MISSING"}\nemail: ${detectedEmail ?? "STILL MISSING"}\nphone: ${detectedPhone ?? "STILL MISSING"}`
@@ -410,7 +432,7 @@ Include this block on every turn from the moment you first learn any of the thre
     // leaves decision null so the screening continues; the model gets
     // another turn to actually finish the block properly next message.
     if (!decision) {
-      const truncatedJsonMatch = aiResponseText.match(/\{\s*"(status|name)"\s*:[\s\S]*$/);
+      const truncatedJsonMatch = aiResponseText.match(/\{\s*"status"\s*:[\s\S]*$/);
       if (truncatedJsonMatch) {
         console.error("⚠️ TRUNCATED/UNPARSEABLE JSON STRIPPED FROM CANDIDATE VIEW:", truncatedJsonMatch[0]);
         aiResponseText = aiResponseText.slice(0, truncatedJsonMatch.index).trim();

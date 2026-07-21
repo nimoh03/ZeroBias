@@ -2,6 +2,23 @@ import { createAdminClient } from "@/utils/supabase/admin";
 import { getAIReply } from "@/utils/ai";
 import { checkRateLimit, getClientIp } from "@/utils/rateLimit";
 
+// pdfjs-dist's legacy build assumes browser DOM globals exist even when
+// all we want is getTextContent() (no actual canvas rendering). Installing
+// @napi-rs/canvas alone does nothing — pdfjs never imports it itself, so
+// these globals must be polyfilled manually, and it must happen at module
+// load time, before pdfjs-dist is imported below, or pdfjs's internal
+// capability checks still see them as undefined.
+import { DOMMatrix, Path2D, ImageData } from "@napi-rs/canvas";
+if (typeof (globalThis as any).DOMMatrix === "undefined") {
+  (globalThis as any).DOMMatrix = DOMMatrix;
+}
+if (typeof (globalThis as any).Path2D === "undefined") {
+  (globalThis as any).Path2D = Path2D;
+}
+if (typeof (globalThis as any).ImageData === "undefined") {
+  (globalThis as any).ImageData = ImageData;
+}
+
 export const maxDuration = 30;
 
 const ALLOWED_TYPES = ["application/pdf", "application/msword", "application/vnd.openxmlformats-officedocument.wordprocessingml.document"];
