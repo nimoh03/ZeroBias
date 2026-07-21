@@ -19,6 +19,15 @@ if (typeof (globalThis as any).ImageData === "undefined") {
   (globalThis as any).ImageData = ImageData;
 }
 
+// Belt-and-suspenders alongside outputFileTracingIncludes in next.config.ts:
+// pdfjs-dist's fake-worker setup does an internal dynamic import() of this
+// exact module path at runtime, which Vercel's file tracer can't discover
+// on its own (it's a computed string, not a static import it can follow).
+// Referencing it directly here, at module load time, gives the tracer an
+// unambiguous signal to bundle the file — independent of whether the
+// config-based include key matches this Next.js version's expected format.
+import "pdfjs-dist/legacy/build/pdf.worker.mjs";
+
 export const maxDuration = 30;
 
 const ALLOWED_TYPES = ["application/pdf", "application/msword", "application/vnd.openxmlformats-officedocument.wordprocessingml.document"];
