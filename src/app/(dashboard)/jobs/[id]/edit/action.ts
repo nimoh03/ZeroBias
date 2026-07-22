@@ -26,6 +26,13 @@ export async function updateJobAction(
     throw new Error("You must be logged in to edit a job.");
   }
 
+  // Same rule as job creation: don't let an edit leave a live job with
+  // neither must-haves nor nice-to-haves — the screening would have
+  // nothing left to actually check candidates against.
+  if (!data.mustHaves?.trim() && !data.niceToHaves?.trim()) {
+    throw new Error("Add at least one must-have or nice-to-have before saving — the screening needs something to check candidates against.");
+  }
+
   // Only touch a job that actually belongs to this recruiter.
   const { error } = await supabase
     .from('jobs')

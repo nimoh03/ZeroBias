@@ -5,6 +5,7 @@ import Link from "next/link";
 import { ArrowLeft, Briefcase, Target, CheckCircle2, Loader2, X, FileText, Trash2, Calendar, AlertTriangle, PauseCircle, PlayCircle, ChevronDown, Gauge, ShieldCheck, ShieldQuestion } from "lucide-react";
 import { updateJobAction, deleteJobAction, setJobStatusAction } from "./action";
 import InterviewSlotsEditor, { type SlotRow } from "@/components/InterviewSlotsEditor";
+import Toast from "@/components/Toast";
 
 type InitialData = {
   title: string;
@@ -51,6 +52,7 @@ export default function EditJobForm({
   const [screeningRigor, setScreeningRigor] = useState<"thorough" | "trusting">(initialData.screeningRigor);
 
   const [jobStatus, setJobStatus] = useState<"active" | "paused">(initialData.status || "active");
+  const [toastMsg, setToastMsg] = useState<string | null>(null);
   const [isTogglingStatus, startStatusTransition] = useTransition();
 
   const handleToggleStatus = (jobIdForToggle: string) => {
@@ -60,7 +62,7 @@ export default function EditJobForm({
         await setJobStatusAction(jobIdForToggle, next);
         setJobStatus(next);
       } catch (error) {
-        alert(error instanceof Error ? error.message : "Something went wrong.");
+        setToastMsg(error instanceof Error ? error.message : "Something went wrong.");
       }
     });
   };
@@ -95,7 +97,7 @@ export default function EditJobForm({
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (mustHaves.length === 0) {
-      alert("Please add at least one Absolute Dealbreaker.");
+      setToastMsg("Please add at least one Absolute Dealbreaker.");
       return;
     }
 
@@ -104,7 +106,7 @@ export default function EditJobForm({
     if (scheduleInterview) {
       computedInterviewSlots = interviewSlots;
       if (computedInterviewSlots.length === 0) {
-        alert("Add at least one interview time and a meeting link.");
+        setToastMsg("Add at least one interview time and a meeting link.");
         return;
       }
     }
@@ -122,7 +124,7 @@ export default function EditJobForm({
         };
         await updateJobAction(jobId, payload);
       } catch (error) {
-        alert(error instanceof Error ? error.message : "Something went wrong.");
+        setToastMsg(error instanceof Error ? error.message : "Something went wrong.");
       }
     });
   };
@@ -133,7 +135,7 @@ export default function EditJobForm({
       try {
         await deleteJobAction(jobId);
       } catch (error) {
-        alert(error instanceof Error ? error.message : "Something went wrong.");
+        setToastMsg(error instanceof Error ? error.message : "Something went wrong.");
       }
     });
   };
@@ -395,6 +397,7 @@ export default function EditJobForm({
         </div>
 
       </form>
+      {toastMsg && <Toast message={toastMsg} onClose={() => setToastMsg(null)} />}
     </div>
   );
 }

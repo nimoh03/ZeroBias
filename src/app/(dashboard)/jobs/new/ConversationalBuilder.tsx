@@ -4,6 +4,7 @@ import { useState, useTransition, KeyboardEvent, useRef, useEffect } from "react
 import { Sparkles, Loader2, X, ArrowRight, ArrowLeft as ArrowLeftIcon, CheckCircle2, FileText, Brain, Send, Calendar, ChevronDown } from "lucide-react";
 import { createJobAction } from "./action";
 import InterviewSlotsEditor, { type SlotRow } from "@/components/InterviewSlotsEditor";
+import Toast from "@/components/Toast";
 
 type Requirement = { text: string; excusable: boolean };
 
@@ -28,6 +29,7 @@ export default function ConversationalBuilder() {
   // Step 3: final phase
   const [finalAction, setFinalAction] = useState("");
   const [scheduleInterview, setScheduleInterview] = useState(false);
+  const [toastMsg, setToastMsg] = useState<string | null>(null);
   const [interviewSlots, setInterviewSlots] = useState<SlotRow[]>([]);
   const [requestCv, setRequestCv] = useState(false);
   const [screeningRigor, setScreeningRigor] = useState<"thorough" | "trusting">("thorough");
@@ -96,11 +98,11 @@ export default function ConversationalBuilder() {
     const niceToHaves = requirements.filter(r => r.excusable).map(r => r.text);
 
     if (mustHaves.length === 0) {
-      alert("At least one requirement needs to stay a dealbreaker. Mark fewer items as excusable, or go back and add more.");
+      setToastMsg("At least one requirement needs to stay a dealbreaker. Mark fewer items as excusable, or go back and add more.");
       return;
     }
     if (scheduleInterview && interviewSlots.length === 0) {
-      alert("Add at least one interview time and a meeting link, or turn off interview scheduling.");
+      setToastMsg("Add at least one interview time and a meeting link, or turn off interview scheduling.");
       return;
     }
 
@@ -120,7 +122,7 @@ export default function ConversationalBuilder() {
         };
         await createJobAction(payload);
       } catch (error) {
-        alert(error instanceof Error ? error.message : "Something went wrong.");
+        setToastMsg(error instanceof Error ? error.message : "Something went wrong.");
       }
     });
   };
@@ -369,6 +371,7 @@ export default function ConversationalBuilder() {
           </div>
         </div>
       )}
+      {toastMsg && <Toast message={toastMsg} onClose={() => setToastMsg(null)} />}
     </div>
   );
 }

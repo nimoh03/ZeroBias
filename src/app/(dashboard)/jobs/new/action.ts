@@ -23,6 +23,14 @@ export async function createJobAction(data: {
     throw new Error("You must be logged in to create a job.");
   }
 
+  // A job with no must-haves AND no nice-to-haves gives the screening AI
+  // nothing to actually check candidates against — the conversation would
+  // have no real criteria to run on. Require at least one of the two
+  // (doesn't have to be both) before the job can go live.
+  if (!data.mustHaves?.trim() && !data.niceToHaves?.trim()) {
+    throw new Error("Add at least one must-have or nice-to-have before creating the job — the screening needs something to check candidates against.");
+  }
+
   // Generate a clean, unique URL slug (e.g., "senior-frontend-engineer-a4f2b")
   const slugBase = data.title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)+/g, '');
   const randomString = Math.random().toString(36).substring(2, 7);
