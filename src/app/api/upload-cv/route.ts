@@ -144,7 +144,36 @@ const extractedText = await extractTextFromFile(fileBuffer, file.type, file.name
       const deepseekKey = process.env.DEEPSEEK_API_KEY;
       const geminiKey = process.env.GEMINI_API_KEY;
 
-      const systemPrompt = "You are extracting a short recruiter-facing summary from a CV/resume's raw extracted text, for a pre-interview screening assistant to use as verified context. In under 120 words, plain text, no markdown: list highest education/qualification, total years of relevant experience, key skills/technologies, and most recent role/employer. Be factual and concise — this will be treated as verified fact, so only include what the document actually states. If the extracted text is garbled or clearly not a resume, say so in one short sentence instead of guessing.";
+      // Pull the job this CV is actually being submitted for, so the
+      // summary can flag relevance (or a total mismatch) directly,
+      // rather than treating every CV as neutral background text with
+      // no connection to what role it's supposedly for. Best-effort —
+      // if this lookup fails for any reason, fall through to a
+      // job-agnostic summary rather than blocking the upload.
+      let jobTitle: string | null = null;
+      let jobMustHaves: string | null = null;
+      const { data: candidateForJob } = await supabase
+        .from("candidates")
+        .select("job_id")
+        .eq("id", candidateId)
+        .single();
+      if (candidateForJob?.job_id) {
+        const { data: jobRow } = await supabase
+          .from("jobs")
+          .select("title, must_haves")
+          .eq("id", candidateForJob.job_id)
+          .single();
+        if (jobRow) {
+          jobTitle = jobRow.title;
+          jobMustHaves = jobRow.must_haves;
+        }
+      }
+
+      const jobContextLine = jobTitle
+        ? `\n\nThis CV was submitted for a "${jobTitle}" role. Dealbreakers for that role:\n${jobMustHaves || "(not specified)"}`
+        : "";
+
+      const systemPrompt = `You are extracting a short recruiter-facing summary from a CV/resume's raw extracted text, for a pre-interview screening assistant to use as verified context. In under 130 words, plain text, no markdown: start with a first line in the exact format "Name on CV: <full name as it appears on the document, or 'not stated' if it genuinely isn't printed anywhere>" — this is used to cross-check against the name the candidate typed in chat, so extract it exactly as written, don't guess or infer it from an email address or file name. Then list highest education/qualification, total years of relevant experience, key skills/technologies, and most recent role/employer. Be factual and concise — this will be treated as verified fact, so only include what the document actually states.${jobContextLine ? " Given the role and dealbreakers below, add one final short sentence flagging whether this CV's background looks relevant to that role or clearly mismatched (e.g. a completely different field/profession) — don't soften this, a recruiter needs the honest read." : ""} If the extracted text is garbled or clearly not a resume, say so in one short sentence instead of guessing.${jobContextLine}`;
 
       try {
         const { text, provider, model, usage } = await getAIReply({
@@ -157,7 +186,7 @@ const extractedText = await extractTextFromFile(fileBuffer, file.type, file.name
             // to be reasonably sized.
             { role: "user", content: extractedText.slice(0, 12000) },
           ],
-          maxTokens: 400,
+          maxTokens: 450,
         });
 
         cvSummary = text;
