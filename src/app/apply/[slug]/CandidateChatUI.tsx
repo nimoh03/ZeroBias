@@ -525,8 +525,17 @@ const [messages, setMessages] = useState<ChatMessage[]>(greeting);
                   el.style.height = 'auto';
                   el.style.height = Math.min(el.scrollHeight, 120) + 'px';
                 }}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' && !e.shiftKey) {
+               onKeyDown={(e) => {
+                  // Most mobile soft keyboards have no practical way to hold
+                  // Shift while tapping Enter, so intercepting plain Enter
+                  // as "submit" there silently removes a candidate's ability
+                  // to ever add a newline for a multi-part answer. Only
+                  // apply the submit-on-Enter convention on devices with a
+                  // real keyboard; mobile just falls through to the
+                  // textarea's default (insert newline) and submits via
+                  // the send button instead.
+                  const isTouchDevice = typeof window !== "undefined" && (('ontouchstart' in window) || navigator.maxTouchPoints > 0);
+                  if (e.key === 'Enter' && !e.shiftKey && !isTouchDevice) {
                     e.preventDefault();
                     handleSend(e as unknown as React.FormEvent);
                   }
