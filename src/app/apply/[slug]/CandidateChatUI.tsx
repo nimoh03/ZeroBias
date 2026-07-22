@@ -235,7 +235,8 @@ const [messages, setMessages] = useState<ChatMessage[]>(greeting);
       if (data.candidateId && data.candidateId !== candidateId) {
         setCandidateId(data.candidateId);
       }
-      setMessages(prev => [...prev, { role: 'assistant', content: data.text }]);
+      const bubbles: string[] = Array.isArray(data.texts) && data.texts.length > 0 ? data.texts : [data.text];
+      setMessages(prev => [...prev, ...bubbles.map((content: string) => ({ role: 'assistant' as const, content }))]);
       if (data.done) {
         setIsDone(true);
         setFinalStatus(data.status ?? null);
