@@ -8,9 +8,12 @@ import { useFormStatus } from 'react-dom';
 import { login, signup } from './action';
 
 function AuthPageInner() {
-  const [isLogin, setIsLogin] = useState(true);
-  const [showPassword, setShowPassword] = useState(false);
   const searchParams = useSearchParams();
+  const inviteToken = searchParams.get('invite');
+  // An invite link always means signup, and there's no reason to let
+  // someone toggle away from it mid-flow — they'd lose the token.
+  const [isLogin, setIsLogin] = useState(!inviteToken);
+  const [showPassword, setShowPassword] = useState(false);
   const errorMessage = searchParams.get('error');
 
   // Atmospheric mouse-tracking glow effect
@@ -113,11 +116,21 @@ function AuthPageInner() {
 
             <div className="animate-in slide-in-from-right-4 fade-in duration-300 flex flex-col gap-6">
               <div>
-                <h2 className="text-xl font-bold mb-1">Get started for free</h2>
-                <p className="text-sm text-on-surface-variant">Join 5,000+ teams hiring faster with AI.</p>
+                {inviteToken ? (
+                  <>
+                    <h2 className="text-xl font-bold mb-1">You've been invited</h2>
+                    <p className="text-sm text-on-surface-variant">Create your account to join the team.</p>
+                  </>
+                ) : (
+                  <>
+                    <h2 className="text-xl font-bold mb-1">Get started for free</h2>
+                    <p className="text-sm text-on-surface-variant">Join 5,000+ teams hiring faster with AI.</p>
+                  </>
+                )}
               </div>
 
               <form action={signup} className="flex flex-col gap-4">
+                {inviteToken && <input type="hidden" name="inviteToken" value={inviteToken} />}
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2">
                     <label className="text-sm font-bold">First Name</label>
@@ -178,12 +191,14 @@ function AuthPageInner() {
                 <SubmitButton defaultText="Create Account" pendingText="Creating..." />
               </form>
 
-              <p className="text-center text-sm text-on-surface-variant mt-2">
-                Already have an account?{' '}
-                <button onClick={() => setIsLogin(true)} className="font-bold text-primary hover:underline">
-                  Sign in instead
-                </button>
-              </p>
+              {!inviteToken && (
+                <p className="text-center text-sm text-on-surface-variant mt-2">
+                  Already have an account?{' '}
+                  <button onClick={() => setIsLogin(true)} className="font-bold text-primary hover:underline">
+                    Sign in instead
+                  </button>
+                </p>
+              )}
             </div>
           )}
         </div>
