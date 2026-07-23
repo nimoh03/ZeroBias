@@ -1,6 +1,6 @@
 import { createClient } from "@/utils/supabase/server";
 import { redirect } from "next/navigation";
-import TeamPageClient from "./TeamPageCleint";
+import TeamPageClient from "./TeamPageClient";
 
 export default async function TeamPage() {
   const supabase = await createClient();
