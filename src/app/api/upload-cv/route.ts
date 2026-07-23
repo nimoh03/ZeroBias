@@ -225,6 +225,24 @@ const extractedText = await extractTextFromFile(fileBuffer, file.type, file.name
       console.error("🔥 COULD NOT SAVE CV DATA:", updateError.message);
     }
 
+    // Log every upload permanently, separate from the overwrite above.
+    // candidates.cv_url/cv_summary only ever reflect the CURRENT/latest
+    // file (needed for the chat route's mismatch-correction flow to keep
+    // working exactly as before), which means a second or third upload
+    // used to silently erase the previous one with no trace. This insert
+    // is the fix: every file, including ones later superseded, stays
+    // visible to the recruiter. Best-effort, same as the other logging
+    // in this route — never blocks or fails the upload itself.
+    const { error: docLogError } = await supabase.from("candidate_documents").insert({
+      candidate_id: candidateId,
+      filename: file.name,
+      url: cvUrl,
+      summary: cvSummary,
+    });
+    if (docLogError) {
+      console.error("⚠️ COULD NOT LOG CANDIDATE DOCUMENT:", docLogError.message);
+    }
+
     return Response.json({ url: cvUrl, filename: file.name, summary: cvSummary, usage: cvUsage });
   } catch (error: any) {
     console.error("🔥 CV UPLOAD ROUTE CRASHED:", error.message || error);

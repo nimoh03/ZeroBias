@@ -1,6 +1,6 @@
 import {
   ArrowLeft, CheckCircle2, XCircle, UserCheck,
-  Sparkles, ThumbsUp, AlertTriangle
+  Sparkles, ThumbsUp, AlertTriangle, FileText
 } from 'lucide-react';
 import Link from 'next/link';
 import { Suspense } from 'react';
@@ -54,6 +54,17 @@ export default async function CandidateDetail({ params }: { params: Promise<{ ca
     return notFound();
   }
 
+  // Full upload history — candidate.cv_url above only ever shows the
+  // CURRENT/latest file (needed so the chat's mismatch-correction flow
+  // keeps working), so a candidate who uploaded more than one document
+  // would otherwise have every earlier one silently disappear with no
+  // trace. This pulls the complete list so nothing's ever hidden.
+  const { data: allDocuments } = await supabase
+    .from('candidate_documents')
+    .select('id, filename, url, summary, created_at')
+    .eq('candidate_id', candidateId)
+    .order('created_at', { ascending: false });
+
   const initials = candidate.name
     ? candidate.name.trim().split(/\s+/).map((p: string) => p[0]).slice(0, 2).join('').toUpperCase()
     : '?';
@@ -98,6 +109,29 @@ export default async function CandidateDetail({ params }: { params: Promise<{ ca
               </a>
             ) : (
               <p className="text-xs text-on-surface-variant mt-4">No CV uploaded</p>
+            )}
+            {allDocuments && allDocuments.length > 1 && (
+              <div className="mt-4 pt-4 border-t border-outline-variant text-left">
+                <p className="text-[11px] font-bold text-on-surface-variant uppercase tracking-wide mb-2">
+                  All uploads ({allDocuments.length})
+                </p>
+                <ul className="space-y-1.5">
+                  {allDocuments.map((doc) => (
+                    <li key={doc.id}>
+                      <a
+                        href={doc.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="flex items-center gap-1.5 text-xs text-on-surface-variant hover:text-primary transition-colors"
+                        title={doc.summary || undefined}
+                      >
+                        <FileText size={13} className="shrink-0" />
+                        <span className="truncate">{doc.filename}</span>
+                      </a>
+                    </li>
+                  ))}
+                </ul>
+              </div>
             )}
           </div>
 
