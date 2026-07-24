@@ -1,11 +1,12 @@
 import { createClient } from "@/utils/supabase/server";
 import Link from "next/link";
 import { 
-  Plus, MoreVertical, Link as LinkIcon, 
+  Plus, Link as LinkIcon, 
   MapPin, Briefcase, Pencil, FolderOpen, Users,
   ChevronLeft, ChevronRight
 } from "lucide-react";
 import CopyLinkButton from "@/components/CopyLinkButton";
+import JobCardMenu from "@/components/JobCardMenu";
 import JobStatusToggle from "./JobStatusToggle";
 
 const PAGE_SIZE = 10;
@@ -128,9 +129,7 @@ export default async function JobsPage({
                   <Pencil size={16} /> Edit
                 </Link>
 
-                <button className="p-2.5 text-slate-400 hover:text-slate-900 hover:bg-slate-100 rounded-xl transition-colors">
-                  <MoreVertical size={18} />
-                </button>
+                <JobCardMenu jobId={job.id} />
               </div>
             </div>
           ))}

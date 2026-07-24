@@ -40,6 +40,35 @@ export async function createInviteAction(role: "admin" | "member") {
 // already sees every job in the org regardless of job_members, so
 // listing them here too would be misleading (checking/unchecking an
 // admin would visibly do nothing).
+export async function updateJobMembersAction(jobId: string, memberIds: string[]) {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) {
+    throw new Error("You must be logged in.");
+  }
+
+  const { data: profile } = await supabase.from("profiles").select("role").eq("id", user.id).single();
+  if (!profile || profile.role !== "admin") {
+    throw new Error("Only admins can assign team members to a job.");
+  }
+
+  // Replace-all, same as the edit form's picker.
+  const { error: clearError } = await supabase.from("job_members").delete().eq("job_id", jobId);
+  if (clearError) {
+    throw new Error("Could not update assignments. Please try again.");
+  }
+  if (memberIds.length > 0) {
+    const { error: insertError } = await supabase.from("job_members").insert(
+      memberIds.map((profile_id) => ({ job_id: jobId, profile_id }))
+    );
+    if (insertError) {
+      throw new Error("Could not update assignments. Please try again.");
+    }
+  }
+
+  revalidatePath("/jobs");
+}
+
 export async function getAssignableMembersAction() {
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
