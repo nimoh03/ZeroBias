@@ -15,7 +15,6 @@ export default async function ShortlistedPage() {
   const { data: jobs } = await supabase
     .from("jobs")
     .select("id, title, location, must_haves, nice_to_haves")
-    .eq("recruiter_id", user?.id)
     .order("created_at", { ascending: false });
 
   const jobIds = (jobs ?? []).map((j) => j.id);

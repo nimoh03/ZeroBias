@@ -27,14 +27,15 @@ export default async function ShortlistedJobPage({
     .eq("id", jobId)
     .single();
 
-  if (!job || job.recruiter_id !== user?.id) notFound();
+  if (!job) notFound();
 
-  // All other jobs owned by this recruiter, so we can label which job
-  // each matched candidate originally applied to.
+  // All other jobs this user has visibility into (RLS already scopes
+  // this correctly: every job in the org for an admin, or just their
+  // assigned jobs for a member) — used to label which job each matched
+  // candidate originally applied to.
   const { data: allJobs } = await supabase
     .from("jobs")
-    .select("id, title")
-    .eq("recruiter_id", user?.id);
+    .select("id, title");
 
   const jobTitleById: Record<string, string> = {};
   for (const j of allJobs ?? []) jobTitleById[j.id] = j.title;

@@ -6,6 +6,7 @@ import { ArrowLeft, Sparkles, Briefcase, Target, CheckCircle2, Loader2, X, FileT
 import { createJobAction } from "./action";
 import ConversationalBuilder from "./ConversationalBuilder";
 import InterviewSlotsEditor, { type SlotRow } from "@/components/InterviewSlotsEditor";
+import TeamMemberPicker from "@/components/TeamMemberPicker";
 
 export default function NewJobPage() {
   const [isPending, startTransition] = useTransition();
@@ -25,6 +26,7 @@ export default function NewJobPage() {
 
   const [requestCv, setRequestCv] = useState(false);
   const [screeningRigor, setScreeningRigor] = useState<"thorough" | "trusting">("thorough");
+  const [memberIds, setMemberIds] = useState<string[]>([]);
 
   // Premium List States
   const [mustHaves, setMustHaves] = useState<string[]>([]);
@@ -86,6 +88,7 @@ export default function NewJobPage() {
           niceToHaves: niceToHaves.map(item => `- ${item}`).join('\n'),
           requestCv,
           screeningRigor,
+          memberIds,
         };
         await createJobAction(payload);
       } catch (error) {
@@ -400,6 +403,8 @@ export default function NewJobPage() {
           </div>
 
         </div>
+
+        <TeamMemberPicker selectedIds={memberIds} onChange={setMemberIds} />
 
         {/* Submit Actions */}
         <div className="flex flex-col-reverse md:flex-row items-center justify-end gap-3 md:gap-4 pt-4">

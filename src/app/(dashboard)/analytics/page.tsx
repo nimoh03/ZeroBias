@@ -26,8 +26,7 @@ export default async function AnalyticsPage() {
 
   const { data: jobs } = await supabase
     .from("jobs")
-    .select("id, title")
-    .eq("recruiter_id", user?.id);
+    .select("id, title");
 
   const jobIds = jobs?.map(j => j.id) || [];
 

@@ -10,7 +10,7 @@ export default async function DashboardOverview() {
   const { data: { user } } = await supabase.auth.getUser();
   const [{ data: profile }, { data: jobs }] = await Promise.all([
     supabase.from('profiles').select('full_name').eq('id', user?.id).single(),
-    supabase.from('jobs').select('*').eq('recruiter_id', user?.id).order('created_at', { ascending: false }),
+    supabase.from('jobs').select('*').order('created_at', { ascending: false }),
   ]);
 
   const firstName = profile?.full_name?.split(' ')[0] || 'Recruiter';

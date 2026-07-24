@@ -29,7 +29,6 @@ export default async function JobsPage({
   const { data: jobs, count: totalCount } = await supabase
     .from('jobs')
     .select('*', { count: 'exact' })
-    .eq('recruiter_id', user?.id)
     .order('created_at', { ascending: false })
     .range(rangeStart, rangeEnd);
 

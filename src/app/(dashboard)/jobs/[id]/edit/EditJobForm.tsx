@@ -1,11 +1,13 @@
 "use client";
 
-import { useState, useTransition, KeyboardEvent } from "react";
+import { useState, useEffect, useTransition, KeyboardEvent } from "react";
 import Link from "next/link";
 import { ArrowLeft, Briefcase, Target, CheckCircle2, Loader2, X, FileText, Trash2, Calendar, AlertTriangle, PauseCircle, PlayCircle, ChevronDown, Gauge, ShieldCheck, ShieldQuestion } from "lucide-react";
 import { updateJobAction, deleteJobAction, setJobStatusAction } from "./action";
 import InterviewSlotsEditor, { type SlotRow } from "@/components/InterviewSlotsEditor";
 import Toast from "@/components/Toast";
+import TeamMemberPicker from "@/components/TeamMemberPicker";
+import { getJobMemberIdsAction } from "@/app/(dashboard)/team/action";
 
 type InitialData = {
   title: string;
@@ -53,6 +55,12 @@ export default function EditJobForm({
 
   const [jobStatus, setJobStatus] = useState<"active" | "paused">(initialData.status || "active");
   const [toastMsg, setToastMsg] = useState<string | null>(null);
+  const [memberIds, setMemberIds] = useState<string[]>([]);
+
+  useEffect(() => {
+    getJobMemberIdsAction(jobId).then(setMemberIds).catch(() => setMemberIds([]));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const [isTogglingStatus, startStatusTransition] = useTransition();
 
   const handleToggleStatus = (jobIdForToggle: string) => {
@@ -121,6 +129,7 @@ export default function EditJobForm({
           niceToHaves: niceToHaves.map(item => `- ${item}`).join('\n'),
           requestCv,
           screeningRigor,
+          memberIds,
         };
         await updateJobAction(jobId, payload);
       } catch (error) {
@@ -366,6 +375,8 @@ export default function EditJobForm({
             Public screening link stays the same: <span className="font-mono">/apply/{publicSlug}</span>
           </p>
         )}
+
+        <TeamMemberPicker selectedIds={memberIds} onChange={setMemberIds} />
 
         {/* Submit Actions */}
         <div className="flex flex-col-reverse md:flex-row items-center justify-between gap-3 md:gap-4 pt-4">

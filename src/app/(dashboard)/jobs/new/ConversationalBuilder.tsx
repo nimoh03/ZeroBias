@@ -5,6 +5,7 @@ import { Sparkles, Loader2, X, ArrowRight, ArrowLeft as ArrowLeftIcon, CheckCirc
 import { createJobAction } from "./action";
 import InterviewSlotsEditor, { type SlotRow } from "@/components/InterviewSlotsEditor";
 import Toast from "@/components/Toast";
+import TeamMemberPicker from "@/components/TeamMemberPicker";
 
 type Requirement = { text: string; excusable: boolean };
 
@@ -30,6 +31,7 @@ export default function ConversationalBuilder() {
   const [finalAction, setFinalAction] = useState("");
   const [scheduleInterview, setScheduleInterview] = useState(false);
   const [toastMsg, setToastMsg] = useState<string | null>(null);
+  const [memberIds, setMemberIds] = useState<string[]>([]);
   const [interviewSlots, setInterviewSlots] = useState<SlotRow[]>([]);
   const [requestCv, setRequestCv] = useState(false);
   const [screeningRigor, setScreeningRigor] = useState<"thorough" | "trusting">("thorough");
@@ -119,6 +121,7 @@ export default function ConversationalBuilder() {
           interviewSlots: scheduleInterview ? interviewSlots : [],
           requestCv,
           screeningRigor,
+          memberIds,
         };
         await createJobAction(payload);
       } catch (error) {
@@ -355,6 +358,8 @@ export default function ConversationalBuilder() {
               </div>
             </div>
           </div>
+
+          <TeamMemberPicker selectedIds={memberIds} onChange={setMemberIds} />
 
           <div className="flex items-center justify-between pt-4">
             <button type="button" onClick={() => setStep(2)} className="text-sm font-bold text-slate-500 hover:text-slate-900 flex items-center gap-1">

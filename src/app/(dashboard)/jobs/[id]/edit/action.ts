@@ -17,6 +17,7 @@ export async function updateJobAction(
     interviewSlots?: { time: string; link: string }[];
     requestCv: boolean;
     screeningRigor?: "thorough" | "trusting";
+    memberIds?: string[];
   }
 ) {
   const supabase = await createClient();
@@ -33,7 +34,9 @@ export async function updateJobAction(
     throw new Error("Add at least one must-have or nice-to-have before saving — the screening needs something to check candidates against.");
   }
 
-  // Only touch a job that actually belongs to this recruiter.
+  // RLS scopes this to "any admin in this job's organization" — not
+  // just the original creator, so a second admin can edit a teammate's
+  // job too.
   const { error } = await supabase
     .from('jobs')
     .update({
@@ -50,12 +53,27 @@ export async function updateJobAction(
       request_cv: !!data.requestCv,
       screening_rigor: data.screeningRigor === "trusting" ? "trusting" : "thorough",
     })
-    .eq('id', jobId)
-    .eq('recruiter_id', user.id);
+    .eq('id', jobId);
 
   if (error) {
     console.error("Job Update Error:", error.message);
     throw new Error("Failed to update the job. Please try again.");
+  }
+
+  if (data.memberIds !== undefined) {
+    // Replace-all: matches a checkbox picker submitting its whole
+    // current state at once, simpler than diffing add/remove.
+    const { error: clearError } = await supabase.from("job_members").delete().eq("job_id", jobId);
+    if (clearError) {
+      console.error("⚠️ COULD NOT CLEAR JOB MEMBERS:", clearError.message);
+    } else if (data.memberIds.length > 0) {
+      const { error: memberError } = await supabase.from("job_members").insert(
+        data.memberIds.map((profile_id) => ({ job_id: jobId, profile_id }))
+      );
+      if (memberError) {
+        console.error("⚠️ COULD NOT ASSIGN TEAM MEMBERS:", memberError.message);
+      }
+    }
   }
 
   // Clear caches so the change shows up immediately, then head back.
@@ -80,8 +98,7 @@ export async function setJobStatusAction(jobId: string, status: "active" | "paus
   const { error } = await supabase
     .from('jobs')
     .update({ status })
-    .eq('id', jobId)
-    .eq('recruiter_id', user.id);
+    .eq('id', jobId);
 
   if (error) {
     console.error("Job Status Update Error:", error.message);
@@ -104,8 +121,7 @@ export async function deleteJobAction(jobId: string) {
   const { error } = await supabase
     .from('jobs')
     .delete()
-    .eq('id', jobId)
-    .eq('recruiter_id', user.id);
+    .eq('id', jobId);
 
   if (error) {
     console.error("Job Delete Error:", error.message);

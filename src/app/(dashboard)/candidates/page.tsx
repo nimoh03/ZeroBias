@@ -50,7 +50,6 @@ export default async function CandidatesList({
   const { data: jobs } = await supabase
     .from('jobs')
     .select('id, title')
-    .eq('recruiter_id', user?.id)
     .order('title', { ascending: true });
 
   const jobIds = jobs?.map(j => j.id) || [];

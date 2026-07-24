@@ -15,6 +15,7 @@ export async function createJobAction(data: {
   interviewSlots?: { time: string; link: string }[];
   requestCv: boolean;
   screeningRigor?: "thorough" | "trusting";
+  memberIds?: string[];
 }) {
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
@@ -36,7 +37,7 @@ export async function createJobAction(data: {
   const randomString = Math.random().toString(36).substring(2, 7);
   const public_slug = `${slugBase}-${randomString}`;
 
-  const { error } = await supabase.from('jobs').insert({
+  const { data: newJob, error } = await supabase.from('jobs').insert({
     recruiter_id: user.id,
     title: data.title,
     location: data.location,
@@ -52,11 +53,22 @@ export async function createJobAction(data: {
     screening_rigor: data.screeningRigor === "trusting" ? "trusting" : "thorough",
     public_slug: public_slug,
     status: 'active'
-  });
+  }).select("id").single();
 
-  if (error) {
-    console.error("Job Creation Error:", error.message);
+  if (error || !newJob) {
+    console.error("Job Creation Error:", error?.message);
     throw new Error("Failed to create the job. Please try again.");
+  }
+
+  if (data.memberIds && data.memberIds.length > 0) {
+    const { error: memberError } = await supabase.from("job_members").insert(
+      data.memberIds.map((profile_id) => ({ job_id: newJob.id, profile_id }))
+    );
+    if (memberError) {
+      // Don't fail the whole job creation over this — the job exists and
+      // is usable, just log it so it's visible something needs a manual fix.
+      console.error("⚠️ COULD NOT ASSIGN TEAM MEMBERS:", memberError.message);
+    }
   }
 
   // Clear the dashboard cache so the new job appears immediately, then redirect

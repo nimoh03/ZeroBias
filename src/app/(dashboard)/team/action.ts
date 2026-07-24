@@ -36,6 +36,38 @@ export async function createInviteAction(role: "admin" | "member") {
   return invite.token as string;
 }
 
+// Only 'member' role teammates need explicit assignment — an admin
+// already sees every job in the org regardless of job_members, so
+// listing them here too would be misleading (checking/unchecking an
+// admin would visibly do nothing).
+export async function getAssignableMembersAction() {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) throw new Error("You must be logged in.");
+
+  const { data: profile } = await supabase
+    .from("profiles")
+    .select("organization_id")
+    .eq("id", user.id)
+    .single();
+  if (!profile) return [];
+
+  const { data: members } = await supabase
+    .from("profiles")
+    .select("id, full_name")
+    .eq("organization_id", profile.organization_id)
+    .eq("role", "member")
+    .order("full_name", { ascending: true });
+
+  return members || [];
+}
+
+export async function getJobMemberIdsAction(jobId: string) {
+  const supabase = await createClient();
+  const { data } = await supabase.from("job_members").select("profile_id").eq("job_id", jobId);
+  return (data || []).map((row) => row.profile_id as string);
+}
+
 export async function removeTeamMemberAction(profileId: string) {
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();

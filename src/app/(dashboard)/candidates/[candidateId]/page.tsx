@@ -217,7 +217,6 @@ export default async function CandidateDetail({ params }: { params: Promise<{ ca
               <JobMatchesPanel
                 candidateId={candidateId}
                 jobId={candidate.job_id}
-                recruiterId={candidate.jobs?.recruiter_id}
                 candidate={{
                   summary: candidate.summary,
                   strengths: candidate.strengths,

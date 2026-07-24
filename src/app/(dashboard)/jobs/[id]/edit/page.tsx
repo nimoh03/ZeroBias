@@ -11,15 +11,28 @@ export default async function EditJobPage({ params }: { params: Promise<{ id: st
     redirect("/login");
   }
 
+  const { data: profile } = await supabase
+    .from("profiles")
+    .select("role")
+    .eq("id", user.id)
+    .single();
+
+  if (profile?.role !== "admin") {
+    // Editing is admin-only. A member could technically SELECT this job
+    // (they can see it if they're assigned to it), but the UPDATE policy
+    // is admin-only — better to redirect cleanly here than let them load
+    // a form whose Save button would silently fail against RLS.
+    redirect("/jobs");
+  }
+
   const { data: job, error } = await supabase
     .from("jobs")
     .select("*")
     .eq("id", id)
-    .eq("recruiter_id", user.id)
     .single();
 
   if (error || !job) {
-    console.error("🔥 JOB NOT FOUND OR NOT YOURS:", error?.message);
+    console.error("🔥 JOB NOT FOUND:", error?.message);
     return notFound();
   }
 

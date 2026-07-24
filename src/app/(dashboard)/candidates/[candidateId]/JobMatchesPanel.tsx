@@ -8,19 +8,16 @@ import { findMatchingJobs, CandidateForMatching } from '@/utils/matching';
 export default async function JobMatchesPanel({
   candidateId,
   jobId,
-  recruiterId,
   candidate,
 }: {
   candidateId: string;
   jobId: string;
-  recruiterId: string | null | undefined;
   candidate: CandidateForMatching;
 }) {
   const supabase = await createClient();
   const { data: otherJobs } = await supabase
     .from('jobs')
-    .select('id, title, location, must_haves, nice_to_haves')
-    .eq('recruiter_id', recruiterId);
+    .select('id, title, location, must_haves, nice_to_haves');
 
   const jobMatches = otherJobs ? findMatchingJobs(candidate, otherJobs, jobId).slice(0, 3) : [];
   if (jobMatches.length === 0) return null;
