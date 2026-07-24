@@ -26,7 +26,13 @@ export default function TeamPageClient({
     startTransition(async () => {
       try {
         const token = await createInviteAction(role);
-        setInviteLink(`${window.location.origin}/login?invite=${token}`);
+        // window.location.origin would break the moment an admin
+        // happens to generate this from a Vercel preview deployment URL
+        // instead of production — Vercel password-protects those by
+        // default, so the link would send whoever opens it to a
+        // Vercel login wall instead of the actual signup page.
+        const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || window.location.origin;
+        setInviteLink(`${siteUrl}/login?invite=${token}`);
         setCopied(false);
       } catch (error) {
         setToastMsg(error instanceof Error ? error.message : "Something went wrong.");
